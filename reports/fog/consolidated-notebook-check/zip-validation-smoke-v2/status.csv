@@ -1,0 +1,3 @@
+model,arm,seed,status
+YOLO11n,predicted_density,42,complete
+YOLO11n,rgb_control,42,complete

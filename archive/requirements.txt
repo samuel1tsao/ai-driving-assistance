@@ -1,0 +1,4 @@
+torch==2.7.1
+torchvision==0.22.1
+ultralytics==8.4.155
+psutil>=7,<8

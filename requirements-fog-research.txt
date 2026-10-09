@@ -1,0 +1,11 @@
+# Use the existing project environment; select a GPU-compatible torch build first.
+-r requirements-notebook.txt
+pycocotools
+nuscenes-devkit
+shapely
+pyquaternion
+scipy
+# DETR uses the official no_timm revision.
+filelock
+tqdm
+kagglehub

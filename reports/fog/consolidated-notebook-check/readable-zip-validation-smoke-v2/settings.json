@@ -1,0 +1,62 @@
+{
+  "engine": 4,
+  "config": {
+    "epochs": 1,
+    "density_epochs": 1,
+    "seeds": [
+      42
+    ],
+    "arms": [
+      "rgb_control",
+      "predicted_density"
+    ],
+    "size": 320,
+    "accumulate": 1,
+    "save_every": 2,
+    "repeats": 1,
+    "learning_rates": {
+      "YOLO11n": 0.0001,
+      "YOLO11m": 0.0001,
+      "DETR": 1e-05
+    },
+    "adapter_lr": 0.001,
+    "amp": true,
+    "device": "cuda:0",
+    "density_checkpoint": null,
+    "test_scope": {
+      "enabled": true,
+      "images_per_stratum": 2,
+      "seed": 42,
+      "models": [
+        "YOLO11n"
+      ],
+      "epochs": 1,
+      "density_epochs": 1,
+      "image_size": 320,
+      "save_every": 2,
+      "run_suffix": "-smoke-v2"
+    },
+    "manifest": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\.runtime\\consolidated-notebook-check\\subset-42\\data\\fog\\nuscenes_all.json",
+    "city_manifest": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\.runtime\\consolidated-notebook-check\\subset-42\\data\\fog\\cityscapes.json",
+    "output": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\reports\\fog\\consolidated-notebook-check\\readable-zip-validation-smoke-v2",
+    "checkpoints": {
+      "YOLO11n": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\yolo11n.pt"
+    }
+  },
+  "inputs": "970886246d66850d94011f2953eddf9ef585c517a20dbec0fe6ec7b32ff716e1",
+  "density_sha256": null,
+  "source_sha256": {
+    "fog_analytics.py": "7f3c660bd007e00443464ab3f25a1af5a4320db49dc457f84fe1afb3315239e6",
+    "fog_data.py": "736c5bc3993ffde83de0e411a63312b2508b645832301df5e14c646f90158cff",
+    "fog_notebook.py": "6b2e3a817ec816bcb38cb7916d6b90c056b4740e9c26a210519c85159b447404",
+    "fog_prepare.py": "68c80e3b1a8729d7140b617e04b7ee16d10dc578e2b7a66e05c85f46e7f11bb3",
+    "fog_research.py": "07f924e8ada6f523d81965b6a1ffa8f59c58696528666d091156a7df5afcae1c",
+    "fog_training.py": "2af220954e9ec471df97cb3a03e5eec10205fee6fa140015d2d41f462e0ab677"
+  },
+  "versions": {
+    "torch": "2.7.1+cu128",
+    "ultralytics": "8.4.155",
+    "transformers": "5.17.0",
+    "pycocotools": "2.0.11"
+  }
+}

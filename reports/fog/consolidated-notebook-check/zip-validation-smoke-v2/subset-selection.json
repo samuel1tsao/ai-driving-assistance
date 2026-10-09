@@ -1,0 +1,21 @@
+{
+  "scope": {
+    "enabled": true,
+    "images_per_stratum": 2,
+    "seed": 42,
+    "models": [
+      "YOLO11n"
+    ],
+    "epochs": 1,
+    "density_epochs": 1,
+    "image_size": 320,
+    "save_every": 2,
+    "run_suffix": "-smoke-v2"
+  },
+  "images": 24,
+  "records_per_manifest": {
+    "data/fog/nuscenes_all.json": 6,
+    "data/fog/cityscapes.json": 18
+  },
+  "scientific_results": false
+}

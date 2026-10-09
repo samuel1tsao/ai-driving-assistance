@@ -1,0 +1,9 @@
+{
+  "model": "YOLO11n",
+  "arm": "rgb_control",
+  "seed": 42,
+  "epoch": 1,
+  "step": 49476,
+  "best_loss": 4.172624257657244,
+  "reason": "interrupt"
+}

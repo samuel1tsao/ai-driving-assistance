@@ -1,0 +1,30 @@
+{
+  "data\\models\\occupancy\\flashocc-m0.pth": {
+    "sha256": "cb776378659af93c2e6968d89767e4c03b6d3720d11fc2071e57b8d5af1d1cd5",
+    "bytes": 160153445
+  },
+  "data\\models\\occupancy\\flashocc-r50-256x704.pth": {
+    "sha256": "99f08ddb759f29adb31a6dcae088f9b159a756db56e533f3d5b65d411c75021b",
+    "bytes": 179380325
+  },
+  "data\\models\\occupancy\\gaussianocc\\depth.pth": {
+    "sha256": "6cf7600ed878102ebf3d291439b1ac00cd5a23bcf9490f46b91ea5391806ca0a",
+    "bytes": 8584261
+  },
+  "data\\models\\occupancy\\gaussianocc\\encoder.pth": {
+    "sha256": "99a57c43c5554d16d4fca8bcdd8debabe8f59e1251f27acf372b765bd6029430",
+    "bytes": 155553549
+  },
+  "scripts\\run_flashocc.py": {
+    "sha256": "884e1d641de68ec425bf429528f73313957e23199116a7f7a340d413d5fcb2bc",
+    "bytes": 4110
+  },
+  "scripts\\run_gaussianocc.py": {
+    "sha256": "2d5498bd63ccac0a805b08d2caa39ff3eecabf96adfbfcf597193a1f558cb455",
+    "bytes": 6879
+  },
+  "data\\occupancy\\inputs\\nuscenes\\frames.json": {
+    "sha256": "b02fb659429c87d59497ad3a8227c243022ea6819a7e9c50d5de54136570979c",
+    "bytes": 728559
+  }
+}

@@ -1,0 +1,13 @@
+jupyterlab
+nbformat
+nbclient
+matplotlib
+numpy
+pandas
+pillow
+torch
+torchvision
+ultralytics
+transformers
+ijson
+gdown

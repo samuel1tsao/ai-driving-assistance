@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "test_only": true,
+  "input_size": 128,
+  "amp": true,
+  "models": [
+    "YOLO11n",
+    "YOLO11m",
+    "DETR"
+  ],
+  "arms": [
+    "rgb_control",
+    "predicted_density"
+  ],
+  "checks": [
+    "density-only isolation",
+    "full detector updates",
+    "six train/eval pipelines",
+    "completed-run resume",
+    "configuration mismatch rejection",
+    "saved metrics and charts"
+  ],
+  "warning": "Tiny fixture; beta targets were arbitrary testing values. No research conclusions."
+}

@@ -1,0 +1,7 @@
+id,dataset,target_beta,predicted_beta
+city/frankfurt_000001_082087/0.005,foggy_cityscapes,0.005,0.010137802921235561
+city/frankfurt_000001_014741/0.005,foggy_cityscapes,0.005,0.010133515112102032
+city/munster_000117_000019/0.01,foggy_cityscapes,0.01,0.01012265495955944
+city/frankfurt_000001_016029/0.01,foggy_cityscapes,0.01,0.010131467133760452
+city/lindau_000000_000019/0.02,foggy_cityscapes,0.02,0.010196578688919544
+city/munster_000127_000019/0.02,foggy_cityscapes,0.02,0.010187766514718533
