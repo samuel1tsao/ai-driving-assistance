@@ -9,7 +9,7 @@ cd ai-driving-assistance
 
 Sign in to GitHub as an account with repository access when Git prompts. Commit and push changes from either computer, then pull on the other before continuing work.
 
-The Git repository contains the active notebooks, support code, scripts, tests, documentation, earlier application source, and small reports. Local datasets, downloaded model weights, virtual environments, caches, generated archives, executed validation notebooks, and large generated input manifests are excluded. These remain on the original computer or Google Drive; cloning Git does not copy training checkpoints.
+The Git repository contains the active notebooks, support code, scripts, tests, documentation, earlier application source, and small reports. Local datasets, downloaded model weights, virtual environments, caches, generated archives, executed validation notebooks, large generated input manifests, and downloaded third-party runtime repositories are excluded. These remain on the original computer or Google Drive; cloning Git does not copy training checkpoints. Archived notebooks retain their third-party project setup instructions.
 
 ## Run the notebook
 

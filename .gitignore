@@ -9,6 +9,7 @@ runs/
 .ultralytics/
 .deployment.lock
 .runtime/
+**/_runtime/
 .cache/
 .ruff_cache/
 .uv-cache/
