@@ -1,5 +1,14 @@
 # Continue this project from another computer
 
+Repository: [samuel1tsao/ai-driving-assistance](https://github.com/samuel1tsao/ai-driving-assistance), private.
+
+```powershell
+git clone https://github.com/samuel1tsao/ai-driving-assistance.git
+cd ai-driving-assistance
+```
+
+Sign in to GitHub as an account with repository access when Git prompts. Commit and push changes from either computer, then pull on the other before continuing work.
+
 The Git repository contains the active notebooks, support code, scripts, tests, documentation, earlier application source, and small reports. Local datasets, downloaded model weights, virtual environments, caches, generated archives, executed validation notebooks, and large generated input manifests are excluded. These remain on the original computer or Google Drive; cloning Git does not copy training checkpoints.
 
 ## Run the notebook
