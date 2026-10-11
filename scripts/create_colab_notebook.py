@@ -18,7 +18,20 @@ def build():
 
 
 def main():
-    nbformat.write(build(), TARGET)
+    notebook = build()
+    nbformat.write(notebook, TARGET)
+    # Support modules are generated mirrors of the notebook's editable Python.
+    for cell in notebook.cells:
+        if cell.cell_type != "code" or not cell.source.startswith("%%writefile"):
+            continue
+        directive, source = cell.source.split("\n", 1)
+        target = Path(directive.split()[-1])
+        if target.parent != Path("notebooks/_support") or target.suffix != ".py":
+            continue
+        with (ROOT / target).open(
+            "a" if " -a " in directive else "w", encoding="utf-8"
+        ) as handle:
+            handle.write(source + "\n")
     destination = ROOT / "dist/fog-colab-code.zip"
     destination.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:

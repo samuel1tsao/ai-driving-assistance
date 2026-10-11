@@ -1,38 +1,47 @@
-# Two-dataset fog validation implementation plan
+# Fog-versus-clear validation implementation plan
 
-## Goal and scope
+## Goal and current gap
 
-Make the analysis answer two questions separately: does density conditioning preserve normal-use detection, and does it help on foggy images? Evaluate (1) the existing nuScenes benchmark and (2) labeled Foggy Cityscapes with matched clear/foggy images. Existing profiles and run directories remain readable.
+Test whether density conditioning lowers average accuracy but improves fog accuracy. The recent run did not test this: detection rows were nuScenes `val` images with `beta=None`; Foggy Cityscapes supplied density supervision
 
-The fog result must state training scope. A detector trained and tested on Foggy Cityscapes is the primary in-domain fog track. Testing a nuScenes-trained detector there is a secondary cross-domain diagnostic because domain shift can mimic a fog effect.
+## Data contract
 
-## Contracts and proposed changes
+`beta` is the attenuation coefficient parsed from Foggy Cityscapes filenames, in m^-1: `0.0` is clear; positive values such as `0.005`, `0.01`, and `0.02` are denser fog. It is the adapter scalar: `rgb_control` supplies zero, `predicted_density` the estimator output, and `oracle_density` known beta. nuScenes has no measured beta and stays `unknown`.
 
-`fog_prepare.py` already provides scene-safe nuScenes partitions and projected 2D boxes; beta is unknown, so nuScenes allows only `rgb_control` and `predicted_density`. `fog_data.py` parses Foggy Cityscapes beta, builds boxes from `gtFine`, and can retain clear counterparts. Make those pairs and dataset provenance first-class records.
+The city manifest must build `gtFine` boxes, preserve clear/fog pairs, assign splits, and record pair, condition, beta/bin, label status, and provenance. Missing masks, duplicate pairs, invalid beta, leakage, and unsupported oracle fail preflight. Beta-only images are never detection negatives.
 
-Add `evaluation_datasets`, `fog_detector_scope`, and `fog_density_bins` to `SETTINGS` and the run fingerprint. Changing them after a checkpoint exists fails with the existing mismatch error. Foggy Cityscapes allows `oracle_density`; nuScenes rejects it. Missing masks, malformed/out-of-range beta, duplicate pair IDs, and split leakage fail before training. Legacy reports load with null dataset/bin fields.
+## Configuration and report contract
 
-## Imbalance policy
+Add `evaluation_datasets`, `fog_detector_scope`, `fog_density_bins`, and evaluation-only checkpoint source to the profile and fingerprint. Keep nuScenes (normal use) and Foggy Cityscapes (in-domain fog) separate; require balanced clear/fog and beta-bin counts while retaining natural rows.
 
-Counts are unequal (about 204,894 nuScenes versus 10,425 Foggy Cityscapes), but these are separate tasks, not one pooled class balance. Do not downsample nuScenes or pool scores. Report each dataset and delta separately; an optional headline may weight datasets equally. Keep clear/foggy pairs intact, stratify Foggy and density training by beta bin, and report natural-distribution plus balanced-bin results. Bootstrap within dataset/bin so nuScenes volume cannot dominate the fog claim.
+The notebook’s manifest/settings are authoritative. Preserve profiles, checkpoints, resume, and version behavior. Export results, paired deltas, seed summaries, and `fog-vs-clear.csv` with dataset, condition, beta/bin, model, arm, seed, and split. Reuse matching checkpoints for evaluation-only runs; version changed inputs/scope.
 
-## Data, outputs, and flow
+## Beginner-readable analytics and figures
 
-1. `notebooks/_support/fog_data.py` emits dataset, clear/foggy condition, pair/group ID, beta and bin metadata; `fog_prepare.py` keeps nuScenes provenance.
-2. `notebooks/_support/fog_training.py` resolves track/model/arm/seed/profile, trains the density estimator, then trains and evaluates using the declared scope. Dataset-track directories and locks prevent checkpoint mixing.
-3. `notebooks/_support/fog_research.py` runs the same COCO bbox metrics per dataset/model/arm. Foggy Cityscapes adds clear-vs-foggy paired deltas and beta-bin results; density quality and latency stay separate. `full` keeps the nuScenes held-out test; partials keep preliminary validation.
-4. `fog_analytics.py`, `fog_notebook.py`, `scripts/create_colab_notebook.py`, and the consolidated notebook expose scopes and export dataset/condition/bin columns in `results.csv`, paired rows, seed summaries and side-by-side figures.
+Every table/figure needs a plain-language title, labels, a “how to read this” note, counts, and a seed warning:
 
-The manifest plus run `settings.json` is authoritative. Reports are reproducible; completed reports reuse safely, interrupted evaluation resumes per dataset, and writes are atomic.
+- **Dataset audit:** counts by dataset/split, clear/fog, beta bin, class, pair coverage, label completeness, and imbalance.
+- **Training health:** train/validation loss by epoch, best epoch, early stopping, runtime, throughput, and checkpoint status.
+- **Detection quality:** mAP50-95, AP50, precision, recall, AR100, and per-class AP. Include mean, standard deviation, seed count, and paired deltas.
+- **Hypothesis result:** clear-versus-fog bars, fog-minus-clear tables, beta-bin curves, and a model-by-metric heatmap; state whether clear accuracy is preserved and fog accuracy improves.
+- **Density quality:** true-versus-predicted beta scatter, MAE/RMSE, residuals by bin, and prediction histograms; keep this separate from detection quality.
+- **Deployment tradeoff:** accuracy-versus-latency scatter, mean/p50/p95 latency, FPS, and density-estimation overhead.
+- **Class/error view:** per-class AP heatmaps and, when supported, precision-recall or confusion plots. Loss alone is not detection quality.
 
-## Validation and rollout
+## Single-notebook flow and readability
 
-Extend the existing tests or add a focused suite covering:
+Make `notebooks/fog_density_consolidated.ipynb` the only authored implementation. Preserve its config, profiles, checkpoints, resume, and preflight. Organize visible cells into short sections: choose profile, audit data, reuse checkpoints, evaluate clear/fog, render analytics, and interpret results. Keep helpers labeled; do not add user-facing modules or duplicate config. Regenerate `notebooks/fog_density_colab.ipynb` and the Drive copy; Git tracks both notebooks and this plan.
 
-- positive: both datasets, all three models, valid control/predicted arms, Foggy Cityscapes oracle, pairs and bins;
-- negative/boundary: missing masks, malformed/edge beta, empty bins, duplicate pairs, no boxes/detections, unsupported nuScenes oracle, mixed scopes, stale manifests and legacy CSV;
-- correctness: pycocotools parity, exact pairing, deterministic bins, per-class metrics, seed aggregation and finite latency;
-- recovery/compatibility: interrupted density/detector/evaluation resume, idempotent completed runs, lock races, changed-setting rejection, partial writes and dependency failure;
-- performance: bounded validation, no duplicate paired inference, and full-track time/memory.
+## Tests and rollout
 
-Roll out with `setup`, a partial profile on both tracks, then `full`. Existing partials remain nuScenes-only until rerun; missing fog results cannot be backfilled. Record the selected scope in configuration and reports.
+Test setup, preflight, training/resume, evaluation-only reuse, paired clear/fog metrics, all models/arms, oracle known-beta rows, multiple seeds, balanced bins, legacy reports, deterministic bins, COCO parity, finite metrics/latency, and bounded 2k resources. Cover bad/missing beta or masks, duplicate/empty groups, no labeled fog rows, leakage, stale settings, unknown beta, unsupported oracle, interruption, partial writes, and missing dependencies.
+
+Roll out with setup/preflight, a small labeled fog evaluation using existing checkpoints, then retraining if needed. Do not claim support until clear/fog deltas exist across multiple seeds.
+
+## Implemented behavior
+
+The notebook now has `evaluate` for a separate, resumable matched-Cityscapes evaluation of existing best checkpoints. This is explicitly a domain-transfer benchmark for nuScenes-trained weights. Its fingerprint records source training settings, checkpoint and mask file versions, selected images, pair cap and evaluation split. Original normal-use metrics retain their dataset and split. Training profiles, full continuation and per-profile versions remain intact; setup resets under its run lock while preserving the current subset audit.
+
+The report includes clear/pooled-fog mAP, per-beta curves, paired clear/fog arm effects and their difference, seed summaries and exploratory seed-bootstrap intervals only with at least three seeds. Graphs cover condition accuracy, effects, AP by class/condition, COCO precision-recall at IoU .50, accuracy/latency, beta scatter/errors, data balance and available source loss histories. Tables retain AP50, precision, recall, AR100, latency percentiles, FPS, beta MAE/RMSE, class coverage and checkpoint health. A confusion matrix is not substituted for COCO matching. Older runs without matched labeled data explicitly leave the hypothesis untested; unrecorded historical training runtime/throughput is not inferred from inference timing.
+
+The consolidated notebook is the sole authored engine. The existing support files and Colab artifact are generated from its ordinary Python cells. CPU fixtures validate execution and graph layout; actual fog findings still require the original clear images and `gtFine` labels, which are absent from the current density-only manifest.

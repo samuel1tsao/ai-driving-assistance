@@ -520,7 +520,7 @@ def evaluate(detector, adapter, density, arm, rows, device, size, repeats=3):
     return results
 
 
-def coco_metrics(rows, results):
+def coco_metrics(rows, results, include_curve=False):
     """COCO bbox AP, including crowd annotations; seven shared categories."""
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
@@ -593,11 +593,29 @@ def coco_metrics(rows, results):
         values = evaluator.eval["precision"][:, :, index, 0, -1]
         supported = values[values >= 0]
         metrics[f"AP_{name}"] = float(supported.mean()) if len(supported) else np.nan
-    return {key: np.nan if value == -1 else value for key, value in metrics.items()}
+    metrics = {key: np.nan if value == -1 else value for key, value in metrics.items()}
+    if include_curve:
+        precision = evaluator.eval["precision"][0, :, :, 0, -1]
+        valid = precision >= 0
+        counts = valid.sum(axis=1)
+        means = np.divide(
+            np.where(valid, precision, 0).sum(axis=1),
+            counts,
+            out=np.full(len(counts), np.nan),
+            where=counts > 0,
+        )
+        metrics["precision_curve"] = means.tolist()
+        metrics["recall_curve"] = evaluator.params.recThrs.tolist()
+    return metrics
 
 
 def summarize(rows, results):
     groups = [("all", "all", list(range(len(rows))))]
+    fog_indices = [
+        i for i, row in enumerate(rows) if row["beta"] is not None and row["beta"] > 0
+    ]
+    if fog_indices:
+        groups.append(("foggy", "foggy", fog_indices))
     for beta in sorted({r["beta"] for r in rows if r["beta"] is not None}):
         groups.append(
             (
@@ -624,6 +642,13 @@ def summarize(rows, results):
             {
                 "density": bucket,
                 "density_bin": bin_name,
+                "condition": "clear"
+                if bin_name == "clear"
+                else "foggy"
+                if bin_name in ("light", "moderate", "dense", "foggy")
+                else "unknown"
+                if bin_name == "unknown"
+                else "mixed",
                 "distribution": "natural",
                 "images": len(subset),
                 **metric,

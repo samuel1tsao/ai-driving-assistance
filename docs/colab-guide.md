@@ -2,6 +2,27 @@
 
 Upload `notebooks/fog_density_colab.ipynb` using **File → Upload notebook** and select a GPU runtime. The notebook embeds the current profile-aware support modules and installs dependencies; no repository checkout is needed. Choose `TRAINING_PROFILE` in the first settings cell. `dist/fog-colab-code.zip` is an optional small bundle of the notebook, this guide and the data packager.
 
+## Evaluate clear versus fog without training again
+
+Choose the profile that produced your saved checkpoints and set `SETTINGS["action"] = "evaluate"`. `evaluation.source_run` can stay empty to use that profile's saved run, or contain an absolute path to another saved run. Match its model names, seeds and image size. All configured model/arm checkpoints must exist; adding an oracle arm requires a separately trained oracle checkpoint.
+
+Set `evaluation.cityscapes_root` to a folder with these official validation subfolders:
+
+```text
+cityscapes-labeled/
+  leftImg8bit/val/<city>/*_leftImg8bit.png
+  leftImg8bit_foggy/val/<city>/*_leftImg8bit_foggy_beta_<beta>.png
+  gtFine/val/<city>/*_gtFine_instanceIds.png
+```
+
+Each scene needs clear plus beta .005, .01 and .02 images. Bounding boxes come from the same instance mask for all four views. The existing fog archive is density-only and does not supply these detection labels. Missing files stop evaluation; the notebook does not download or invent annotations. Only validation files are scanned, keeping preparation bounded.
+
+`max_pairs=100` selects a deterministic set of 100 complete scene pairs (400 images); `None` uses every available scene. New predictions, metrics, figures and export ZIP go into `evaluation.output_name`, separate from source training checkpoints. Source and output locks prevent concurrent training/evaluation from mixing results. Changing inputs, source weights or evaluation settings requires a new output name.
+
+Start with the clear/fog bars and density-minus-control deltas. The proposed pattern is a positive fog delta and negative clear delta within a model. Unknown-beta nuScenes results remain a separate normal-use benchmark; they are not a verified clear dataset. This evaluates transfer to Cityscapes for nuScenes-trained checkpoints. One seed is exploratory, and multiple fog versions of a scene are correlated.
+
+Use `analyze` with `SETTINGS["output"]["run_name"]` set to the saved evaluation folder to redraw graphs without images or model weights. Save a notebook copy with outputs after running if you want a visual snapshot. CSVs and PNGs persist independently of cleared cell outputs. The optional synthetic batch-64 benchmark is disabled by default; existing real training settings are preserved.
+
 Model/data API versions are pinned to the local research environment in `requirements-colab.txt`; the runtime's installed CUDA-compatible PyTorch/torchvision pair is retained and checked with GPU NMS before training.
 
 ## Configure everything in the first code cell

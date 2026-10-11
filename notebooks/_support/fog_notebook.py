@@ -14,7 +14,7 @@ from IPython.display import Image, display
 
 from fog_analytics import export_analytics
 from fog_research import PROFILE_NAMES, read_manifest, select_profile_rows
-from fog_training import preflight, run_training
+from fog_training import preflight, run_training, run_checkpoint_evaluation
 
 
 PROFILE_DEFAULTS = {
@@ -133,7 +133,7 @@ def single_name(value):
 
 def validate_study_settings():
     global ROOT
-    if SETTINGS["action"] not in {"train", "preflight", "analyze"}:
+    if SETTINGS["action"] not in {"train", "preflight", "analyze", "evaluate"}:
         raise ValueError("Unknown action.")
     profile = SETTINGS.get("profile", {})
     profile_name = profile.get("name")
@@ -288,6 +288,24 @@ def resolve_study_configuration(settings):
     connect_and_resolve_study_storage()
     apply_subset_execution_settings()
     resolve_manifest_and_model_paths()
+    if SETTINGS["action"] == "evaluate":
+        options = SETTINGS["evaluation"]
+        source = Path(options["source_run"] or TRAINING_CONFIGURATION["output"])
+        output = RESOLVED_PATHS["output_root"] / single_name(options["output_name"])
+        if source.resolve() == output.resolve():
+            raise ValueError("Evaluation must use a separate output_name.")
+        TRAINING_CONFIGURATION.update(
+            evaluation_source=str(source),
+            output=str(output),
+            evaluation_split=options["split"],
+            overwrite_existing=False,
+        )
+        TRAINING_CONFIGURATION["evaluation_max_pairs"] = options.get("max_pairs")
+        TRAINING_CONFIGURATION["evaluation_cityscapes_root"] = str(
+            Path(options["cityscapes_root"]).resolve()
+        )
+        RESOLVED_PATHS["run"] = output
+        RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
     return TRAINING_CONFIGURATION, RESOLVED_PATHS
 
 
@@ -447,7 +465,7 @@ def prepare_subset():
 
 def prepare_configured_dataset():
     data_settings = SETTINGS["data"]
-    if SETTINGS["action"] == "analyze":
+    if SETTINGS["action"] in {"analyze", "evaluate"}:
         print("Analysis uses saved run outputs; dataset extraction is skipped.")
         return
     if SETTINGS["profile"]["name"] != "full":
@@ -540,6 +558,29 @@ def verify_prepared_manifest_files():
 
 
 def load_and_validate_dataset_annotations(configuration):
+    if SETTINGS["action"] == "evaluate":
+        from fog_data import cityscapes_manifest
+
+        options = SETTINGS["evaluation"]
+        manifest = Path(configuration["output"]) / "matched-cityscapes.json"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        from filelock import FileLock
+
+        with FileLock(str(manifest) + ".lock", timeout=0):
+            if not manifest.exists():
+                cityscapes_manifest(
+                    options["cityscapes_root"],
+                    manifest,
+                    with_detection_labels=True,
+                    splits=("val",),
+                )
+        annotations = read_manifest(manifest, verify_images=True)
+        root = Path(options["cityscapes_root"]).resolve()
+        if any(not Path(row["image"]).is_relative_to(root) for row in annotations):
+            raise ValueError(
+                "cityscapes_root changed; choose a new evaluation output_name."
+            )
+        return annotations
     annotations = []
     for key in ("manifest", "city_manifest"):
         path = Path(configuration[key])
@@ -584,6 +625,28 @@ def display_dataset_split_summary(annotations, configuration):
 
 
 def display_training_readiness_checks(configuration, annotations):
+    if SETTINGS["action"] == "evaluate":
+        from fog_training import validate_matched_evaluation
+
+        source = Path(configuration["evaluation_source"])
+        source_rows = json.loads((source / "input-manifest.json").read_text())
+        selected = validate_matched_evaluation(
+            annotations,
+            source_rows,
+            configuration["evaluation_split"],
+            configuration.get("evaluation_max_pairs"),
+        )
+        checks = pd.DataFrame(
+            [
+                {
+                    "check": "matched held-out images",
+                    "ready": True,
+                    "detail": f"{len(selected)} labeled images",
+                }
+            ]
+        )
+        display(checks)
+        return checks
     checks = preflight(configuration, annotations)
     display(checks)
     if not checks.ready.all():
@@ -607,6 +670,8 @@ def execute_training(action, configuration, annotations, checks):
 def train_or_analyze_configured_study(action, configuration, annotations, checks):
     if action == "analyze":
         return execute_analysis(configuration), None
+    if action == "evaluate":
+        return run_checkpoint_evaluation(annotations, configuration)
     return execute_training(action, configuration, annotations, checks)
 
 
@@ -614,7 +679,44 @@ def display_accuracy_latency_and_density_tables(results, output):
     if results.empty:
         print("No completed runs yet.")
         return
-    display(results[results.density.isin(["all", "balanced"])].round(4))
+    columns = [
+        "dataset",
+        "model",
+        "arm",
+        "seed",
+        "density",
+        "images",
+        "mAP50_95",
+        "AP50",
+        "precision_at_025",
+        "recall_at_025",
+        "AR100",
+    ]
+    print(
+        "Detection quality: higher is better. Clear = beta 0; foggy = pooled positive beta."
+    )
+    display(
+        results.loc[
+            results.density.isin(["all", "balanced", "0.0", "foggy"]), columns
+        ].round(4)
+    )
+    print("Inference cost: lower milliseconds is better; higher FPS is better.")
+    display(
+        results.loc[
+            results.density == "all",
+            [
+                "dataset",
+                "model",
+                "arm",
+                "seed",
+                "mean_ms",
+                "p50_ms",
+                "p95_ms",
+                "serial_fps",
+                "density_mean_ms",
+            ],
+        ].round(2)
+    )
     paired = pd.read_csv(Path(output) / "paired-deltas.csv", dtype={"density": str})
     display(
         paired.loc[
@@ -625,6 +727,22 @@ def display_accuracy_latency_and_density_tables(results, output):
     density = pd.read_csv(Path(output) / "density-quality.csv")
     if not density.empty:
         display(density.round(6))
+    hypothesis = pd.read_csv(Path(output) / "fog-vs-clear.csv")
+    if not hypothesis.empty:
+        print("Positive delta means density helped detection; negative means it hurt.")
+        display(hypothesis.round(4))
+        summary = pd.read_csv(Path(output) / "hypothesis-summary.csv")
+        display(summary.round(4))
+    else:
+        print(
+            "Clear/fog hypothesis untested: this run has no labeled matched benchmark."
+        )
+    print(
+        "Checkpoint health: best_epoch is the evaluated checkpoint; epochs_trained is total fitted epochs."
+    )
+    display(pd.read_csv(Path(output) / "training-health.csv"))
+    print("Evaluation sample counts and labeled object counts:")
+    display(pd.read_csv(Path(output) / "dataset-audit.csv"))
 
 
 def display_saved_comparison_figures(output, results):
@@ -637,6 +755,12 @@ def display_saved_comparison_figures(output, results):
         "*-classes.png",
         "*-density.png",
         "*-loss.png",
+        "*-conditions.png",
+        "*-effects.png",
+        "*-condition-classes.png",
+        "*-precision-recall.png",
+        "density-diagnostics.png",
+        "dataset-audit.png",
     ):
         for path in sorted((Path(output) / "figures").glob(pattern)):
             display(Image(filename=str(path), width=1000))
@@ -693,7 +817,7 @@ def verify_subset_completion_and_checkpoint_reuse(results, annotations):
         }
         # Exercise completed-run resume; the engine should reuse checkpoints and saved results.
         resumed_results, resumed_status = run_training(
-            annotations, TRAINING_CONFIGURATION
+            annotations, TRAINING_CONFIGURATION, reset_setup=False
         )
         if any(
             Path(path).stat().st_mtime_ns != timestamp

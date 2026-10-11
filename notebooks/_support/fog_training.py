@@ -25,6 +25,7 @@ from fog_research import (
     Detector,
     FogAdapter,
     beta_for,
+    coco_metrics,
     digest,
     epoch_indices,
     epoch_size,
@@ -1253,11 +1254,245 @@ def evaluate_detector_comparison(
                     **metrics,
                     "peak_gpu_mb": peak_gpu_megabytes,
                     "trainable_detector_parameters": trainable_parameter_count,
-                    "trained_checkpoint_mb": (directory / "best.pt").stat().st_size
+                    "trained_checkpoint_mb": Path(
+                        identity.get("source_checkpoint", directory / "best.pt")
+                    )
+                    .stat()
+                    .st_size
                     / 2**20,
                 }
             )
+        curves = []
+        for condition in ("clear", "foggy"):
+            indices = [
+                index
+                for index, row in enumerate(test_annotations)
+                if row["beta"] is not None
+                and (row["beta"] == 0 if condition == "clear" else row["beta"] > 0)
+            ]
+            if indices:
+                curve = coco_metrics(
+                    [test_annotations[index] for index in indices],
+                    [predictions[index] for index in indices],
+                    include_curve=True,
+                )
+                curves.append(
+                    {
+                        **identity,
+                        "dataset": dataset_name,
+                        "condition": condition,
+                        "precision": curve["precision_curve"],
+                        "recall": curve["recall_curve"],
+                    }
+                )
+        atomic_json(directory / f"{dataset_name}-precision-recall.json", curves)
     pd.DataFrame(summaries).to_csv(directory / "results.csv", index=False)
+
+
+def validate_matched_evaluation(rows, source_rows, split, max_pairs=None):
+    """Require the same labeled scenes at each fog level, held out from fitting."""
+    selected = [row for row in rows if row["split"] == split]
+    if not selected:
+        raise ValueError(f"No matched evaluation images in split {split}.")
+    pairs = {}
+    for row in selected:
+        if not row.get("detection_labeled") or not row.get("annotation_source"):
+            raise ValueError("Matched evaluation requires gtFine detection labels.")
+        if not Path(row["annotation_source"]).is_file():
+            raise FileNotFoundError(row["annotation_source"])
+        if row.get("beta") is None or not row.get("pair_id"):
+            raise ValueError("Matched evaluation requires known beta and pair_id.")
+        pairs.setdefault(row["pair_id"], []).append(row)
+    expected = {0.0, 0.005, 0.01, 0.02}
+    for pair, variants in pairs.items():
+        if len(variants) != len(expected) or {r["beta"] for r in variants} != expected:
+            raise ValueError(f"Incomplete or duplicate clear/fog variants: {pair}")
+        reference = variants[0]
+        for row in variants:
+            if any(
+                row[key] != reference[key]
+                for key in ("boxes", "labels", "iscrowd", "width", "height", "group")
+            ):
+                raise ValueError(f"Mismatched ground truth: {pair}")
+    fitted_groups = {
+        (r["dataset"], r["group"])
+        for r in source_rows
+        if r["split"] in ("detector_train", "density_train")
+        or (split == "test" and r["split"] == "val")
+    }
+    if any((r["dataset"], r["group"]) in fitted_groups for r in selected):
+        raise ValueError("Evaluation scenes overlap checkpoint fitting/tuning scenes.")
+    if max_pairs is not None:
+        if (
+            not isinstance(max_pairs, int)
+            or isinstance(max_pairs, bool)
+            or max_pairs < 1
+        ):
+            raise ValueError("max_pairs must be a positive integer or None.")
+        chosen = set(
+            sorted(pairs, key=lambda pair: hashlib.sha256(pair.encode()).hexdigest())[
+                :max_pairs
+            ]
+        )
+        selected = [row for row in selected if row["pair_id"] in chosen]
+    return sorted(selected, key=lambda row: row["id"])
+
+
+def run_checkpoint_evaluation(rows, configuration):
+    """Evaluate saved best weights; source runs are read-only and never trained."""
+    from fog_analytics import export_analytics
+
+    source = Path(configuration["evaluation_source"]).resolve()
+    output = Path(configuration["output"]).resolve()
+    if source == output or source in output.parents or output in source.parents:
+        raise ValueError("Evaluation output must be separate from the training run.")
+    output.mkdir(parents=True, exist_ok=True)
+    with (
+        FileLock(str(source / "run.lock"), timeout=0),
+        FileLock(str(output / "run.lock"), timeout=0),
+    ):
+        source_settings = json.loads((source / "settings.json").read_text())
+        source_config = source_settings["config"]
+        if configuration["size"] != source_config["size"]:
+            raise ValueError("Use the source checkpoint's image size for evaluation.")
+        source_rows = json.loads((source / "input-manifest.json").read_text())
+        evaluation_rows = validate_matched_evaluation(
+            rows,
+            source_rows,
+            configuration["evaluation_split"],
+            configuration.get("evaluation_max_pairs"),
+        )
+        sources = []
+        for seed in configuration["seeds"]:
+            for model in configuration["checkpoints"]:
+                for arm in configuration["arms"]:
+                    checkpoint = source / f"{model}-{arm}-{seed}" / "best.pt"
+                    if not checkpoint.is_file():
+                        raise FileNotFoundError(f"Missing trained arm: {checkpoint}")
+                    if (
+                        arm not in source_config["arms"]
+                        or seed not in source_config["seeds"]
+                    ):
+                        raise ValueError("Arm/seed was not trained in the source run.")
+                    sources.append((model, arm, seed, checkpoint))
+            if "predicted_density" in configuration["arms"]:
+                density_path = source / f"density-{seed}" / "best.pt"
+                if not density_path.is_file():
+                    raise FileNotFoundError(density_path)
+        identity_config = dict(
+            configuration,
+            initialization="pretrained",
+            source_training_config=source_config,
+            checkpoint_sources={
+                str(path): [path.stat().st_size, path.stat().st_mtime_ns]
+                for _, _, _, path in sources
+            },
+            evaluation_scope="matched_cityscapes_domain_shift",
+        )
+        identity_config["density_sources"] = {
+            str(path): [path.stat().st_size, path.stat().st_mtime_ns]
+            for path in (
+                source / f"density-{seed}" / "best.pt"
+                for seed in configuration["seeds"]
+            )
+            if path.exists()
+        }
+        identity_config["annotation_sources"] = {
+            str(path): [path.stat().st_size, path.stat().st_mtime_ns]
+            for path in {Path(row["annotation_source"]) for row in evaluation_rows}
+        }
+        validate_and_record_run_identity(evaluation_rows, identity_config, output)
+        for model, arm, seed, checkpoint in sources:
+            evaluate_saved_comparison(
+                model, arm, seed, checkpoint, evaluation_rows, configuration, output
+            )
+        return export_analytics(output, evaluation_rows), pd.read_csv(
+            output / "status.csv"
+        )
+
+
+def evaluate_saved_comparison(model, arm, seed, checkpoint, rows, config, output):
+    directory = output / f"{model}-{arm}-{seed}"
+    directory.mkdir(exist_ok=True)
+    status_path = directory / "status.json"
+    if (
+        status_path.exists()
+        and json.loads(status_path.read_text())["status"] == "complete"
+    ):
+        return
+    identity = {
+        "model": model,
+        "arm": arm,
+        "seed": seed,
+        "profile": config.get("profile_name", "full"),
+        "evaluation_split": config["evaluation_split"],
+        "source_checkpoint": str(checkpoint),
+        "evaluation_scope": "matched_cityscapes_domain_shift",
+    }
+    detector = adapter = density = None
+    try:
+        detector = Detector(
+            model, config["checkpoints"][model], config["device"], trainable=True
+        )
+        adapter = FogAdapter().to(config["device"])
+        saved = torch.load(checkpoint, map_location=config["device"], weights_only=True)
+        source_config = json.loads(
+            (checkpoint.parent.parent / "settings.json").read_text()
+        )["config"]
+        identity["planned_epochs"] = source_config["epochs"]
+        identity["best_epoch"] = saved.get("epoch")
+        detector.model.load_state_dict(saved["model"])
+        adapter.load_state_dict(saved["adapter"])
+        detector.model.eval()
+        adapter.eval()
+        if arm == "predicted_density":
+            density = DensityCNN().to(config["device"])
+            payload = torch.load(
+                Path(config["evaluation_source"]) / f"density-{seed}" / "best.pt",
+                map_location=config["device"],
+                weights_only=True,
+            )
+            density.load_state_dict(payload["model"])
+            density.eval().requires_grad_(False)
+        identity.update(read_detector_stop_metadata(checkpoint.parent, source_config))
+        atomic_json(status_path, {**identity, "status": "evaluating"})
+        evaluate_detector_comparison(
+            detector,
+            adapter,
+            density,
+            {"evaluation": rows},
+            config,
+            directory,
+            identity,
+            sum(p.numel() for p in detector.model.parameters()),
+        )
+        normal_path = checkpoint.parent / "results.csv"
+        if normal_path.exists():
+            normal = pd.read_csv(normal_path, dtype={"density": str})
+            normal = normal[normal.dataset == "nuscenes"].copy()
+            normal["evaluation_scope"] = "source_normal_use_fog_unknown"
+            measured = pd.read_csv(directory / "results.csv", dtype={"density": str})
+            pd.concat([measured, normal], ignore_index=True).to_csv(
+                directory / "results.csv", index=False
+            )
+        atomic_json(status_path, {**identity, "status": "complete"})
+    except BaseException as error:
+        atomic_json(
+            status_path,
+            {
+                **identity,
+                "status": "interrupted"
+                if isinstance(error, KeyboardInterrupt)
+                else "error",
+                "reason": f"{type(error).__name__}: {error}",
+            },
+        )
+        raise
+    finally:
+        del detector, adapter, density
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 def run_detector_comparison(
@@ -1354,7 +1589,7 @@ def run_detector_comparison(
     return json.loads(status_path.read_text())
 
 
-def run_training(rows, config):
+def run_training(rows, config, reset_setup=True):
     """Validate identity, resume each comparison, and produce the study reports."""
     checks = preflight(config, rows)
     if not checks.ready.all():
@@ -1368,12 +1603,19 @@ def run_training(rows, config):
             raise ValueError(
                 "overwrite_existing is only allowed for the setup profile."
             )
-        # Setup is a disposable smoke test. Remove its prior artifacts so the
-        # same version can be rerun after code/config changes without mixing runs.
-        if output_directory.exists():
-            shutil.rmtree(output_directory)
     output_directory.mkdir(parents=True, exist_ok=True)
     with FileLock(str(output_directory / "run.lock"), timeout=0):
+        if config.get("overwrite_existing", False) and reset_setup:
+            # Preserve this execution's selected-input audit and the active lock.
+            for child in output_directory.iterdir():
+                if child.name in ("run.lock", "subset-selection.json"):
+                    continue
+                if not child.resolve().is_relative_to(output_directory.resolve()):
+                    raise ValueError("Setup cleanup target escapes its output folder.")
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
         validate_and_record_run_identity(rows, config, output_directory)
         dataset_partitions = partitions(rows, config)
         comparison_statuses = []

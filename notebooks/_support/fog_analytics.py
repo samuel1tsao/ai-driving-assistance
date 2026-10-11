@@ -28,7 +28,7 @@ def add_balanced_bin_rows(results):
     if "density_bin" not in results:
 
         def legacy_bin(value):
-            if value in ("all", "unknown"):
+            if value in ("all", "unknown", "foggy", "balanced"):
                 return value
             return density_bin(float(value))
 
@@ -36,7 +36,7 @@ def add_balanced_bin_rows(results):
     if "distribution" not in results:
         results["distribution"] = "natural"
     candidates = results[
-        ~results.density.isin(["all", "unknown", "balanced"])
+        ~results.density.isin(["all", "unknown", "balanced", "foggy"])
         & (results.density_bin != "unknown")
     ]
     summaries = []
@@ -48,11 +48,14 @@ def add_balanced_bin_rows(results):
             density="balanced",
             density_bin="balanced",
             distribution="balanced_bins",
-            images=int(round(group.images.mean())),
+            images=int(group.images.sum()),
+            condition="mixed",
         )
         for column in BALANCED_METRICS:
             if column in group:
-                summary[column] = float(group[column].mean())
+                summary[column] = float(
+                    group.groupby("density_bin")[column].mean().mean()
+                )
         summaries.append(summary)
     if summaries:
         results = pd.concat([results, pd.DataFrame(summaries)], ignore_index=True)
@@ -74,6 +77,22 @@ def export_analytics(output, rows=None):
                 pd.read_csv(directory / "results.csv", dtype={"density": str})
             )
     pd.DataFrame(statuses).to_csv(output / "status.csv", index=False)
+    health = pd.DataFrame(statuses)
+    health_columns = [
+        name
+        for name in (
+            "model",
+            "arm",
+            "seed",
+            "status",
+            "planned_epochs",
+            "epochs_trained",
+            "best_epoch",
+            "stop_reason",
+        )
+        if name in health
+    ]
+    health[health_columns].to_csv(output / "training-health.csv", index=False)
     if not frames:
         raise RuntimeError(
             f"No completed experiments under {output}. Check status.csv; resume training first."
@@ -111,6 +130,7 @@ def export_analytics(output, rows=None):
     paired["delta_mAP"] = paired.mAP50_95 - paired.mAP50_95_control
     paired["delta_latency_ms"] = paired.mean_ms - paired.mean_ms_control
     paired.to_csv(output / "paired-deltas.csv", index=False)
+    export_hypothesis_tables(output, paired)
     metric_names = [
         "mAP50_95",
         "AP50",
@@ -147,7 +167,7 @@ def export_analytics(output, rows=None):
                 if not line.endswith("\n"):
                     break
                 row = json.loads(line)
-                target = by_id[row["id"]]["beta"]
+                target = by_id.get(row["id"], {}).get("beta")
                 if target is not None:
                     known.append((row["beta_input"], target))
         if known:
@@ -166,6 +186,7 @@ def export_analytics(output, rows=None):
         columns=["experiment", "dataset", "images", "MAE_beta", "RMSE_beta"],
     ).to_csv(output / "density-quality.csv", index=False)
     make_figures(output, results, paired)
+    make_hypothesis_figures(output, results, paired, rows)
     return results
 
 
@@ -260,7 +281,9 @@ def make_figures(output, results, paired):
             fig.tight_layout()
             fig.savefig(figures / f"{dataset}-balanced.png", bbox_inches="tight")
             plt.close(fig)
-        numeric = frame[~frame.density.isin(["all", "unknown", "balanced"])].copy()
+        numeric = frame[
+            ~frame.density.isin(["all", "unknown", "balanced", "foggy"])
+        ].copy()
         if not numeric.empty:
             numeric["beta"] = numeric.density.astype(float)
             fig, ax = plt.subplots(figsize=(9, 5))
@@ -317,7 +340,17 @@ def make_figures(output, results, paired):
             fig.tight_layout()
             fig.savefig(figures / f"{dataset}-deltas.png", bbox_inches="tight")
             plt.close(fig)
-    for history_file in output.glob("*/history.csv"):
+    history_files = list(output.glob("*/history.csv"))
+    settings_path = output / "settings.json"
+    if settings_path.exists():
+        source = (
+            json.loads(settings_path.read_text())
+            .get("config", {})
+            .get("evaluation_source")
+        )
+        if source:
+            history_files.extend(Path(source).glob("*/history.csv"))
+    for history_file in history_files:
         history = pd.read_csv(history_file)
         if not {"train_loss", "val_loss"} <= set(history.columns):
             continue
@@ -328,4 +361,248 @@ def make_figures(output, results, paired):
         ax.legend()
         fig.tight_layout()
         fig.savefig(figures / f"{history_file.parent.name}-loss.png")
+        plt.close(fig)
+
+
+def export_hypothesis_tables(output, paired):
+    """Compare density versus control separately on clear and pooled fog images."""
+    keys = ["dataset", "model", "arm", "seed"]
+    clear = paired[paired.density == "0.0"][keys + ["delta_mAP", "images"]]
+    fog = paired[paired.density == "foggy"][keys + ["delta_mAP", "images"]]
+    effects = clear.merge(
+        fog, on=keys, suffixes=("_clear", "_fog"), validate="one_to_one"
+    )
+    effects["fog_advantage"] = effects.delta_mAP_fog - effects.delta_mAP_clear
+    effects["supports_direction_in_this_seed"] = (effects.delta_mAP_fog > 0) & (
+        effects.delta_mAP_clear < 0
+    )
+    effects.to_csv(output / "fog-vs-clear.csv", index=False)
+    summaries = []
+    for keys, group in effects.groupby(["dataset", "model", "arm"]):
+        summary = dict(zip(["dataset", "model", "arm"], keys))
+        summary["seeds"] = group.seed.nunique()
+        summary["interpretation"] = "Exploratory; no seed uncertainty with one seed"
+        for metric in ("delta_mAP_clear", "delta_mAP_fog", "fog_advantage"):
+            values = group[metric].to_numpy()
+            summary[metric + "_mean"] = float(values.mean())
+            summary[metric + "_std"] = (
+                float(values.std(ddof=1)) if len(values) > 1 else np.nan
+            )
+            lower = upper = np.nan
+            if len(values) >= 3:
+                samples = np.random.default_rng(42).choice(values, (5000, len(values)))
+                lower, upper = np.percentile(samples.mean(axis=1), [2.5, 97.5])
+                summary["interpretation"] = (
+                    "95% bootstrap interval over training seeds; few seeds remain exploratory"
+                )
+            summary[metric + "_ci_low"] = lower
+            summary[metric + "_ci_high"] = upper
+        summaries.append(summary)
+    pd.DataFrame(summaries).to_csv(output / "hypothesis-summary.csv", index=False)
+
+
+def make_hypothesis_figures(output, results, paired, rows):
+    import matplotlib.pyplot as plt
+    from fog_research import CLASSES, density_bin
+
+    figures = output / "figures"
+    for dataset, frame in results.groupby("dataset"):
+        conditions = frame[frame.density.isin(["0.0", "foggy"])]
+        if conditions.empty:
+            continue
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+        for ax, (value, title) in zip(axes, [("0.0", "Clear"), ("foggy", "Foggy")]):
+            part = conditions[conditions.density == value]
+            table = part.groupby(["model", "arm"]).mAP50_95.mean().unstack()
+            arm_order = [
+                arm
+                for arm in ("rgb_control", "predicted_density", "oracle_density")
+                if arm in table
+            ]
+            table[arm_order].rename(
+                columns={
+                    "rgb_control": "RGB control",
+                    "predicted_density": "Predicted density",
+                    "oracle_density": "Known density (oracle)",
+                }
+            ).plot.bar(ax=ax, color=["#33658A", "#D17A22", "#548235"][: len(arm_order)])
+            count = part.images.max()
+            ax.set(
+                title=f"{title}: {count} images per model/arm",
+                xlabel="Model",
+                ylabel="Detection mAP (higher is better)",
+                ylim=(0, 1),
+            )
+            ax.tick_params(axis="x", rotation=0)
+            ax.legend(fontsize=7)
+        fig.suptitle(f"{dataset}: same scenes and labels; bars average training seeds")
+        fig.tight_layout()
+        fig.savefig(figures / f"{dataset}-conditions.png", bbox_inches="tight")
+        plt.close(fig)
+        delta = paired[
+            (paired.dataset == dataset) & paired.density.isin(["0.0", "foggy"])
+        ]
+        if not delta.empty:
+            fig, ax = plt.subplots(figsize=(12, 5))
+            table = (
+                delta.groupby(["model", "arm", "density"]).delta_mAP.mean().unstack()
+            )
+            table.rename(columns={"0.0": "Clear", "foggy": "Foggy"}).plot.bar(ax=ax)
+            ax.set_xticklabels(
+                [f"{model}\n{arm.replace('_', ' ')}" for model, arm in table.index],
+                rotation=0,
+            )
+            ax.axhline(0, color="black", linewidth=1)
+            ax.set(
+                ylabel="Density minus RGB control: delta mAP",
+                xlabel="Model and density arm",
+                title="Above zero helps; below zero hurts. One seed cannot establish significance.",
+            )
+            fig.tight_layout()
+            fig.savefig(figures / f"{dataset}-effects.png", bbox_inches="tight")
+            plt.close(fig)
+        columns = [f"AP_{name}" for name in CLASSES]
+        table = conditions.groupby(["density", "model", "arm"])[columns].mean()
+        fig, ax = plt.subplots(figsize=(11, max(4, len(table) * 0.4)))
+        heat = ax.imshow(table.to_numpy(), vmin=0, vmax=1, aspect="auto")
+        ax.set_xticks(range(len(columns)), CLASSES, rotation=30)
+        ax.set_yticks(range(len(table)), [" | ".join(key) for key in table.index])
+        ax.set_title("Per-class AP by condition (blank = no labeled examples)")
+        fig.colorbar(heat, ax=ax, label="AP: higher is better")
+        fig.tight_layout()
+        fig.savefig(figures / f"{dataset}-condition-classes.png", bbox_inches="tight")
+        plt.close(fig)
+    audit = pd.DataFrame(
+        [
+            {
+                "dataset": row["dataset"],
+                "split": row["split"],
+                "bin": density_bin(row["beta"]),
+                "detection_labeled": row.get("detection_labeled", True),
+                "pair_id": row.get("pair_id"),
+                "objects": len(row["labels"]),
+            }
+            for row in rows
+        ]
+    )
+    if not audit.empty:
+        audit.groupby(["dataset", "split", "bin", "detection_labeled"]).agg(
+            images=("dataset", "size"),
+            pairs=("pair_id", "nunique"),
+            objects=("objects", "sum"),
+        ).to_csv(output / "dataset-audit.csv")
+        classes = [
+            {
+                "dataset": row["dataset"],
+                "split": row["split"],
+                "bin": density_bin(row["beta"]),
+                "class": CLASSES[label],
+                "crowd": crowd,
+            }
+            for row in rows
+            for label, crowd in zip(
+                row["labels"], row.get("iscrowd", [0] * len(row["labels"]))
+            )
+        ]
+        if classes:
+            pd.DataFrame(classes).groupby(
+                ["dataset", "split", "bin", "class", "crowd"]
+            ).size().rename("objects").to_csv(output / "class-coverage.csv")
+        fig, ax = plt.subplots(figsize=(12, 5))
+        audit.groupby(["dataset", "split", "bin"]).size().plot.bar(ax=ax)
+        ax.set(
+            ylabel="Images",
+            xlabel="Dataset / split / fog level",
+            title="Data balance: unknown fog condition is not clear",
+        )
+        fig.tight_layout()
+        fig.savefig(figures / "dataset-audit.png", bbox_inches="tight")
+        plt.close(fig)
+    make_density_diagnostics(output, rows)
+    make_precision_recall_figures(output)
+
+
+def make_density_diagnostics(output, rows):
+    import matplotlib.pyplot as plt
+    from fog_research import density_bin
+
+    lookup = {row["id"]: row for row in rows}
+    estimates = []
+    for path in output.glob("*-predicted_density-*/*-predictions.jsonl"):
+        for line in path.read_text().splitlines(keepends=True):
+            if not line.endswith("\n"):
+                break
+            record = json.loads(line)
+            target = lookup.get(record["id"], {}).get("beta")
+            if target is not None:
+                estimates.append(
+                    {
+                        "experiment": path.parent.name,
+                        "id": record["id"],
+                        "target": target,
+                        "predicted": record["beta_input"],
+                    }
+                )
+    if not estimates:
+        return
+    data = pd.DataFrame(estimates)
+    data["error"] = data.predicted - data.target
+    data["bin"] = data.target.map(density_bin)
+    data.to_csv(output / "density-estimates.csv", index=False)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    axes[0].scatter(data.target, data.predicted, s=8, alpha=0.3)
+    axes[0].plot([0, 0.02], [0, 0.02], color="black")
+    axes[0].set(
+        xlabel="Known beta (m^-1)",
+        ylabel="Predicted beta (m^-1)",
+        title="Closer to diagonal = better density estimate",
+    )
+    data.boxplot(column="error", by="bin", ax=axes[1])
+    axes[1].axhline(0, color="black")
+    axes[0].set_xticks([0, 0.005, 0.01, 0.02])
+    axes[1].set(title="Density error by fog level", ylabel="Predicted minus known beta")
+    axes[2].hist(data.error, bins=25)
+    axes[2].set(title="Density errors", xlabel="Beta error", ylabel="Predictions")
+    axes[2].set_xticks([-0.01, -0.005, 0, 0.005, 0.01])
+    fig.suptitle("Density quality is distinct from bounding-box detection quality")
+    fig.tight_layout()
+    fig.savefig(output / "figures/density-diagnostics.png", bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_precision_recall_figures(output):
+    import matplotlib.pyplot as plt
+
+    records = []
+    for path in output.glob("*/*-precision-recall.json"):
+        records.extend(json.loads(path.read_text()))
+    if not records:
+        return
+    curves = pd.DataFrame(records)
+    curves.to_json(output / "precision-recall.json", orient="records", indent=2)
+    for dataset, frame in curves.groupby("dataset"):
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharex=True, sharey=True)
+        for ax, condition in zip(axes, ["clear", "foggy"]):
+            for (model, arm), group in frame[frame.condition == condition].groupby(
+                ["model", "arm"]
+            ):
+                precision = np.array(group.precision.tolist(), dtype=float)
+                mean = np.nanmean(precision, axis=0)
+                ax.plot(group.iloc[0].recall, mean, label=f"{model}: {arm}")
+            ax.set(
+                xlabel="Recall: fraction of labeled objects found",
+                ylabel="Precision: fraction of reported objects correct",
+                title=f"{condition.title()} images",
+                xlim=(0, 1),
+                ylim=(0, 1.02),
+            )
+            if ax.lines:
+                ax.legend(fontsize=7)
+        fig.suptitle(
+            f"{dataset}: precision versus recall at IoU 0.50; class macro average"
+        )
+        fig.tight_layout()
+        fig.savefig(
+            output / "figures" / f"{dataset}-precision-recall.png", bbox_inches="tight"
+        )
         plt.close(fig)

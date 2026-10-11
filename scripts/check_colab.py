@@ -34,7 +34,9 @@ def main():
         if cell.source.startswith("%%writefile"):
             target = Path(cell.source.splitlines()[0].split()[-1]).name
             if target in MODULE_NAMES:
-                embedded[target] = source_from_cell(cell)
+                if " -a " not in cell.source.splitlines()[0]:
+                    embedded[target] = ""
+                embedded[target] += source_from_cell(cell) + "\n"
         else:
             ast.parse(cell.source, filename=f"notebook cell {cell.id}")
     for name in MODULE_NAMES:

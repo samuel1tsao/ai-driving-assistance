@@ -48,7 +48,9 @@ def resolve_foggy_images(project_root, explicit=None, download=False):
     )
 
 
-def cityscapes_manifest(root, output, with_detection_labels=False):
+def cityscapes_manifest(
+    root, output, with_detection_labels=False, splits=("train", "val")
+):
     """Kaggle/official images suffice for density supervision; gtFine is optional.
 
     Rows without gtFine are explicitly density-only, never negative detection images.
@@ -85,7 +87,7 @@ def cityscapes_manifest(root, output, with_detection_labels=False):
             f"Expected one Foggy Cityscapes image root under {root}; found {len(image_roots)}"
         )
     image_root = image_roots[0]
-    for split in ("train", "val"):
+    for split in splits:
         paths = sorted((image_root / split).glob("*/*_leftImg8bit_foggy_beta_*.png"))
         cache = {}
         for image in tqdm(paths, desc=f"Foggy Cityscapes {split}", mininterval=2):
@@ -151,6 +153,8 @@ def cityscapes_manifest(root, output, with_detection_labels=False):
                     "image": str(image),
                     "dataset": "foggy_cityscapes",
                     "group": group,
+                    "pair_id": f"city/{base}",
+                    "condition": "foggy",
                     "split": assigned,
                     "beta": beta,
                     "boxes": boxes,
@@ -182,9 +186,17 @@ def cityscapes_manifest(root, output, with_detection_labels=False):
             / base.split("_")[0]
             / f"{base}_leftImg8bit.png"
         )
+        if with_detection_labels and not clear.is_file():
+            raise FileNotFoundError(f"Missing matched clear image: {clear}")
         if clear.is_file() and base not in seen:
             rows.append(
-                {**row, "id": f"city/{base}/clear", "image": str(clear), "beta": 0.0}
+                {
+                    **row,
+                    "id": f"city/{base}/clear",
+                    "image": str(clear),
+                    "beta": 0.0,
+                    "condition": "clear",
+                }
             )
             seen.add(base)
     from fog_prepare import atomic_json

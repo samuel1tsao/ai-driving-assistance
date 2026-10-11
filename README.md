@@ -2,6 +2,8 @@
 
 Open the [fog density study notebook](notebooks/fog_density_consolidated.ipynb). It runs independent `setup`, `partial-2k`, `partial-5k`, and `full` profiles across **YOLO11n, YOLO11m and DETR**, then exports accuracy, latency, per-class AP, paired differences and charts. See the [research plan](docs/fog-density-research-plan.md) and the [two-dataset validation implementation plan](docs/two-dataset-fog-validation-implementation-plan.md).
 
+Use `SETTINGS["action"] = "evaluate"` to test existing trained weights on matched labeled clear/fog Cityscapes images without retraining. Clear/fog effect charts, density diagnostics and precision-recall curves are explained inside the notebook. `analyze` redraws saved reports. The consolidated notebook is the authored source; its Colab copy and support files are generated mirrors. See the [Colab guide](docs/colab-guide.md) for required labels and paths.
+
 ## Run on Google Colab
 
 See the [proposed setup, partial and full training profiles](docs/training-run-profiles.md) for bounded preliminary results and early stopping. See the [progressive-stage implementation plan](docs/training-run-profiles-implementation-plan.md) and [latest Colab source refresh](docs/colab-drive-sync.md).
