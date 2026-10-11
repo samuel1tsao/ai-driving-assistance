@@ -1,10 +1,12 @@
 # Fog-density object detection research
 
-Open [the full-training notebook](notebooks/fog_density_detection_research.ipynb). It jointly fine-tunes **YOLO11n, YOLO11m and DETR** and their matched fog-input adapters, then exports accuracy, latency, per-class AP, paired differences and charts. See the [research plan](docs/fog-density-research-plan.md).
+Open the [fog density study notebook](notebooks/fog_density_consolidated.ipynb). It runs independent `setup`, `partial-2k`, `partial-5k`, and `full` profiles across **YOLO11n, YOLO11m and DETR**, then exports accuracy, latency, per-class AP, paired differences and charts. See the [research plan](docs/fog-density-research-plan.md) and the [two-dataset validation implementation plan](docs/two-dataset-fog-validation-implementation-plan.md).
 
 ## Run on Google Colab
 
-For the readable, consolidated notebook with independent filesystem/Drive locations and a small-data execution test, open [fog_density_consolidated.ipynb](notebooks/fog_density_consolidated.ipynb). See [configuration and validation notes](docs/fog-density-consolidated-notebook.md). Test mode runs both comparison arms on a bounded subset and saves checkpoints separately from full-study runs.
+See the [proposed setup, partial and full training profiles](docs/training-run-profiles.md) for bounded preliminary results and early stopping. See the [progressive-stage implementation plan](docs/training-run-profiles-implementation-plan.md) and [latest Colab source refresh](docs/colab-drive-sync.md).
+
+For profile configuration, checkpoint continuation and validation notes, see [the consolidated notebook guide](docs/fog-density-consolidated-notebook.md). Partial profiles use fixed tuning rows for preliminary analysis; the full profile continues the existing full run and evaluates the final held-out set.
 
 All Colab settings now live in the first code cell. Set `DRIVE_DATA_DIR` relative to MyDrive and choose `DATA_MODE="zip"` for local extraction or `"directory"` for an existing extracted Drive dataset. See [configuration examples](docs/colab-guide.md#configure-everything-in-the-first-code-cell).
 
@@ -37,7 +39,7 @@ From this project directory in PowerShell:
 
 ```powershell
 .venv/Scripts/python.exe -m pip install -r requirements-fog-research.txt
-.venv/Scripts/python.exe -m jupyter lab notebooks/fog_density_detection_research.ipynb
+.venv/Scripts/python.exe -m jupyter lab notebooks/fog_density_consolidated.ipynb
 ```
 
 Use the project Python kernel, then review the first settings cell:
@@ -47,7 +49,7 @@ Use the project Python kernel, then review the first settings cell:
 3. Keep `ACTION='train'` and **Restart Kernel and Run All**. Preflight displays precise blockers before training. Once ready, all configured models/arms run automatically.
 4. To resume, use the same output directory and identical settings. To change an experiment, choose a new output directory. To reopen results only, set `ACTION='analyze'`.
 
-Defaults are 30 epochs, seeds 42/43/44, 640-pixel square inputs, single-image microsteps with four accumulated gradients, and mixed-precision training on CUDA. Final inference timing uses batch-one FP32. No sample limit is applied. This is a long GPU workload, not a quick Run All demonstration.
+The full profile uses 30 detector epochs, 15 density epochs, seeds 42/43/44, 640-pixel square inputs, single-image microsteps with four accumulated gradients, and mixed-precision training on CUDA. Partial profiles use seed 42, five epochs, deterministic scene-safe caps and balanced Foggy Cityscapes beta-bin sampling for density training. The full profile keeps natural density sampling so an existing full checkpoint can continue without changing its training distribution. The separate synthetic GPU benchmark uses batch 64; real detector training remains batch-one with accumulation four.
 
 ## Run from a terminal
 
@@ -130,6 +132,6 @@ Earlier app, occupancy and depth work remains under [the archive](archive/legacy
 
 See the [laptop handoff guide](docs/laptop-handoff.md) for environment setup, Google Drive checkpoint reuse, and cumulative continuation progress.
 
-Open the [readable Colab notebook](https://colab.research.google.com/drive/1JO5Xt9lsvwxEbUHHKYg_-SHZ922IlqM_) or [local consolidated notebook](notebooks/fog_density_consolidated.ipynb). See the [coding standard](docs/coding-standards.md) and [configuration and validation notes](docs/fog-density-consolidated-notebook.md). The full-study notebook launched earlier remains separate.
+Open the current [fog density study Colab notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC) or [local consolidated notebook](notebooks/fog_density_consolidated.ipynb). See the [coding standard](docs/coding-standards.md) and [configuration and validation notes](docs/fog-density-consolidated-notebook.md).
 
 Before expensive training, run `.venv/Scripts/python.exe -m unittest discover -s tests -v` and `.venv/Scripts/python.exe scripts/check_notebook_code.py`. The CPU tests exercise checkpoint recovery and original training reference results without downloading model weights. Rerun with the same settings and persistent output directory to resume; only work saved in completed checkpoints survives runtime loss.

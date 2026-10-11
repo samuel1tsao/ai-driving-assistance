@@ -1,6 +1,6 @@
 # Consolidated fog-density notebook
 
-Open the refactored copy in [Google Colab](https://colab.research.google.com/drive/1JO5Xt9lsvwxEbUHHKYg_-SHZ922IlqM_). The earlier full-study notebook is preserved separately.
+Open the current refactored copy in [Google Colab](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC).
 
 `notebooks/fog_density_consolidated.ipynb` is a self-contained, readable version of the uploaded Colab notebook. It contains visible module cells rather than an escaped `EMBEDDED_FILES` dictionary. Running those cells writes the visible Python modules into the runtime for normal imports.
 
@@ -12,7 +12,8 @@ Edit only the `SETTINGS` cell. Data and output locations are independent:
 - `{"kind": "path", "path": "/mnt/datasets/fog"}` uses an absolute filesystem directory.
 - `data.mode` selects a prepared ZIP or a prepared directory.
 - `output.location` and `output.run_name` determine where reports and training checkpoints are written.
-- Reuse the same run name and training settings to resume. Change the run name for a different experiment.
+- Choose `setup`, `partial-2k`, `partial-5k`, or `full` in `TRAINING_PROFILE`. Partial profiles start from pretrained weights and write to independent directories. The full profile points at the existing `colab-full-study` run by default; keep that name and its recorded settings when continuing it.
+- Reuse the same profile, run name and training settings to resume. Change the run name for a different experiment.
 
 The resolver builds `RESOLVED_PATHS` and `TRAINING_CONFIGURATION` once. Training settings do not come from a second hidden default configuration. A directory data source must contain the configured prepared manifests and their referenced images. ZIP input uses the same prepared layout; package both datasets with the repository's `scripts/package_colab_data.py --include-fog`.
 
@@ -24,11 +25,15 @@ Data may live in Drive while outputs use a mounted filesystem volume, or vice ve
 
 Before training, the notebook lists every configured run with its saved overall training percentage, completed epochs, image steps within the current epoch, and evaluation status. Percentages count completed image steps across all planned epochs and include previous sessions. Each restored trainer prints cumulative loss history retained in the checkpoint. Overall training completion does not imply evaluation completion. Eleven CPU regression tests passed, including progress across earlier epochs; a real-data ZIP subset rerun passed with completed checkpoints and continuation output. See the [laptop handoff guide](laptop-handoff.md).
 
-### Subset execution test
+### Independent profiles and subset execution
 
-`SETTINGS["test"]["enabled"]` is currently false following the requested full-study launch. Set it to true for a bounded execution test. The test uses one YOLO11n model, one seed, one detector epoch, one density epoch, a 320-pixel image size, and up to four eligible images per dataset/split/beta stratum. Both RGB-control and predicted-density arms remain enabled. The sampler preserves original split assignments and selects deterministically by image ID and seed. ZIP mode reads manifests first and extracts only selected referenced images rather than the entire roughly 53 GB Drive archive. Directory mode copies the selected images into local subset storage.
+The profile selector is the experiment switch. `setup` runs an all-model smoke profile; `partial-2k` and `partial-5k` run all three models and both comparison arms from pretrained weights on deterministic scene-safe training caps. They use fixed tuning rows for preliminary metrics and do not evaluate final-test rows. ZIP mode reads manifests first and extracts only selected referenced images rather than the entire roughly 53 GB Drive archive. Directory mode copies selected images into local profile storage.
 
-Test checkpoints and reports use a separate `-smoke-v2` output directory. Test preflight explicitly labels subset scope instead of claiming complete nuScenes coverage. The sampler prefers annotated detection images so AP is defined, while retaining unlabeled images with known beta for density validation. The completion cell checks finite overall metrics, saved checkpoints and reports, and reruns completed training to exercise checkpoint reuse without rewriting checkpoints. This checks completed-run resume. The CPU regression suite additionally checks interrupted detector and density checkpoint recovery; a forced Colab runtime termination remains untested. Disable test mode only after the subset passes. A one-model test does not validate YOLO11m or DETR execution.
+Partial and setup profiles balance the labeled beta strata during Foggy Cityscapes density training, while reports retain natural per-bin metrics and add equal-bin macro rows. The full profile keeps natural sampling for continuity with the existing full-run checkpoint. nuScenes and Foggy Cityscapes remain separate analysis populations; density-only Foggy rows are never treated as detection negatives.
+
+The legacy `SETTINGS["test"]` switch remains available for the bounded notebook checker. It intentionally narrows that checker to YOLO11n so notebook validation stays inexpensive; it is not a research profile.
+
+Test checkpoints and reports use a separate output directory. Test preflight explicitly labels subset scope instead of claiming complete nuScenes coverage. The completion cell checks finite overall metrics, saved checkpoints and reports, and reruns completed training to exercise checkpoint reuse without rewriting checkpoints. This checks completed-run resume. The CPU regression suite additionally checks interrupted detector and density checkpoint recovery; a forced Colab runtime termination remains untested. A one-model checker does not validate YOLO11m or DETR execution; use the `setup` profile for that all-model smoke check.
 
 The source dataset archive was found in `MyDrive/fog-study/fog-colab-data.zip`. The remote Colab run passed on a T4 GPU with 48 real images: 12 nuScenes detector images and 36 Foggy Cityscapes density images. Both YOLO11n arms completed training and evaluation, required checkpoints/reports were present, overall metrics were finite, and completed-run resume reused checkpoints without rewriting them. The notebook printed `SUBSET E2E PASSED` and exported the results successfully. The first Drive mount failed; the second attempt mounted successfully.
 

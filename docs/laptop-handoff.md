@@ -13,11 +13,11 @@ The Git repository contains the active notebooks, support code, scripts, tests, 
 
 ## Run the notebook
 
-Open `notebooks/fog_density_consolidated.ipynb` in Colab, or use the [synced readable copy](https://colab.research.google.com/drive/1JO5Xt9lsvwxEbUHHKYg_-SHZ922IlqM_). Edit the single `SETTINGS` cell. Set `test.enabled` to true for a small test before expensive training.
+Open `notebooks/fog_density_consolidated.ipynb` in Colab, or use the [current fog density study notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC). Edit the configuration cell. Use `TRAINING_PROFILE="setup"` for an all-model smoke run before expensive training, then choose `partial-2k`, `partial-5k`, or `full`.
 
 To resume the existing Drive study, keep the same data, training settings, `output.location`, and `output.run_name`. The configured output directory is `MyDrive/fog-study/runs/colab-full-study`. Mount the same Google Drive account. Use only one training session per output directory.
 
-The **Overall progress and checkpoint continuation** table lists every configured density and detector run, completed epochs, saved image steps in the current epoch, overall training percentage, and status. The percentage includes earlier sessions and measures training image steps, not elapsed time or evaluation completion. Each resumed trainer prints cumulative loss history from its checkpoint. Loss charts include previous epochs because the checkpoint retains the full history.
+The **Overall progress and checkpoint continuation** table lists every configured density and detector run, completed epochs, saved image steps in the current epoch, overall training percentage, and status. The percentage includes earlier sessions and measures training image steps, not elapsed time or evaluation completion. Each resumed trainer prints cumulative loss history from its checkpoint. Loss charts include previous epochs because the checkpoint retains the full history. Partial profiles use separate output directories and never warm-start from another profile.
 
 If Colab terminates, reconnect and Run all with the same settings. The engine restores the most recent completed checkpoint; unsaved work is replayed. Do not change experiment settings while reusing a checkpoint directory. Package-version mismatches may require recreating the original environment or choosing a new run directory.
 

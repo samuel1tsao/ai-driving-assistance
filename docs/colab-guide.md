@@ -1,6 +1,6 @@
 # Run the fog study in Google Colab
 
-Upload `notebooks/fog_density_colab.ipynb` using **File → Upload notebook** and select a GPU runtime. The notebook embeds the five active support modules and installs dependencies; no repository checkout is needed. `dist/fog-colab-code.zip` is an optional small bundle of the notebook, this guide and the data packager.
+Upload `notebooks/fog_density_colab.ipynb` using **File → Upload notebook** and select a GPU runtime. The notebook embeds the current profile-aware support modules and installs dependencies; no repository checkout is needed. Choose `TRAINING_PROFILE` in the first settings cell. `dist/fog-colab-code.zip` is an optional small bundle of the notebook, this guide and the data packager.
 
 Model/data API versions are pinned to the local research environment in `requirements-colab.txt`; the runtime's installed CUDA-compatible PyTorch/torchvision pair is retained and checked with GPU NMS before training.
 
