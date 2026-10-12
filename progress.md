@@ -77,3 +77,18 @@ Drive readback: `fog_density_study.ipynb`, ID `1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC
 Limits: the local manifest has 10,425 density-only Foggy images and no detection labels. CPU fixtures are not scientific results; CUDA/Colab execution and the actual labeled fog benchmark require the user's runtime and gtFine/clear assets. No full training or dataset upload was launched. Unrelated working-tree changes remain untouched.
 
 Publication: `git push origin main` succeeded against `https://github.com/samuel1tsao/ai-driving-assistance.git`. The final progress record is committed separately after successful publication. All planned implementation work is complete; the next research step is supplying labeled matched assets and running `evaluate` in Colab.
+
+## Continuation and explicit retraining follow-up
+
+User contract: an existing profile resumes unfinished training or reuses completed comparisons; only an explicit retrain flag starts fresh, except disposable setup. Analyze only reads saved results.
+
+| Status | Work item | Verification |
+|---|---|---|
+| DONE | Diagnose actual Drive error and make dispatch/reuse explicit | Saved notebook and traceback used train. All six 2k-v1 comparisons are complete. Old config had natural density sampling; new defaults added balanced sampling and profile metadata. |
+| DONE | Explicit retrain flag with preserved prior runs; actionable setting differences | Existing runs use recorded config/caps before preparing data. Finished runs redraw saved reports without training or weights. Retrain allocates a fresh sibling; setup preserves its disposable contract. Unknown actions never train; mismatch messages list changed fields. |
+| DONE | Positive/negative/performance/race tests | 34 tests, notebook lint/format, Colab checks and directory/ZIP smoke runs passed. Legacy full continuation identity is retained. Existing checkpoint/input/package protections and locks remain; fresh folders are allocated exclusively. |
+| DONE | Publish continuation fix | Main Drive notebook updated and verified (359,669 bytes, 2026-10-12 01:12:49 UTC); commit `40125c5` pushed to origin/main. |
+
+The operational retrain flag is not added to checkpoint fingerprints. On retraining, the previous output and archive remain intact; default exports follow the selected fresh folder. Continuing that fresh run later requires selecting its printed output name and setting retrain=False. A Windows temporary-file lock interrupted one existing density checkpoint test; its isolated 11-test suite and the full 33-test suite both passed on retry without changing checkpoint-save semantics.
+
+Saved Drive evidence: `partial-2k-v1/settings.json` (ID `1fhubuYtYGNzREynxIO_5Ver6j00cAR98`) omitted density_sampling, which means natural sampling; all six rows of `status.csv` were complete, including early stops. The latest main notebook had action=train, not analyze, and its traceback entered execute_training. Existing 2k/5k/full run files were read only. The main notebook's latest partial-2k selection and 5k v2 setting were preserved. Its outputs were backed up as `fog_density_study_before_continuation_fix_20261011.ipynb` (ID `1oms11pbIVz8hB95AwEEd3hlS0uPbbGhb`) before replacing the main notebook.
