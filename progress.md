@@ -92,3 +92,16 @@ User contract: an existing profile resumes unfinished training or reuses complet
 The operational retrain flag is not added to checkpoint fingerprints. On retraining, the previous output and archive remain intact; default exports follow the selected fresh folder. Continuing that fresh run later requires selecting its printed output name and setting retrain=False. A Windows temporary-file lock interrupted one existing density checkpoint test; its isolated 11-test suite and the full 33-test suite both passed on retry without changing checkpoint-save semantics.
 
 Saved Drive evidence: `partial-2k-v1/settings.json` (ID `1fhubuYtYGNzREynxIO_5Ver6j00cAR98`) omitted density_sampling, which means natural sampling; all six rows of `status.csv` were complete, including early stops. The latest main notebook had action=train, not analyze, and its traceback entered execute_training. Existing 2k/5k/full run files were read only. The main notebook's latest partial-2k selection and 5k v2 setting were preserved. Its outputs were backed up as `fog_density_study_before_continuation_fix_20261011.ipynb` (ID `1oms11pbIVz8hB95AwEEd3hlS0uPbbGhb`) before replacing the main notebook.
+
+## Notebook readability enforcement
+
+Goal: keep the single authored Colab notebook understandable from its visible workflow while preserving its self-contained runtime implementation and checkpoint behavior.
+
+| Status | Work item | Verification |
+|---|---|---|
+| DONE | Refactor the configuration and training orchestration into named, flat steps | Configuration now applies saved/selected profiles, export routing, retrain allocation and evaluation routing as separate steps. Training now performs preflight, setup cleanup, comparison scheduling and export through separate helpers. |
+| DONE | Reduce visible execution cells to high-level calls | The optional synthetic batch-64 benchmark moved behind one descriptive workflow call; it remains separate from detector training. |
+| DONE | Add mechanical notebook readability enforcement | `scripts/check_notebook_readability.py` requires collapsed runtime cells, one cohesive definition per helper cell, exact notebook/support mirroring, five-or-fewer visible workflow statements, and 40-line flat orchestration functions. `scripts/sync_notebook_support.py` regenerates the notebook helper cells. |
+| DONE | Preserve checkpoint/reuse behavior | The full 34-test suite passed after the refactor, including interruption/recovery, completed-run reuse, profile continuation, output locking and matched checkpoint evaluation. Notebook syntax/lint/format and the readability guard passed. |
+
+The current Colab notebook was updated in place and verified by Drive metadata: ID `1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC`, 366,432 bytes, updated 2026-10-12 01:29:15 UTC. The local bounded end-to-end check reached its setup training stage but was stopped by the 30-second command limit, so it is not counted as a pass. The `fog_density_detection_research.ipynb` and existing report/Drive-sync working-tree changes remain unrelated and untouched.

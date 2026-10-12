@@ -18,6 +18,13 @@ def build():
 
 
 def main():
+    # Keep generated mirrors aligned before copying the portable Colab artifact.
+    import subprocess
+    import sys
+
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts/sync_notebook_support.py")], check=True
+    )
     notebook = build()
     nbformat.write(notebook, TARGET)
     # Support modules are generated mirrors of the notebook's editable Python.

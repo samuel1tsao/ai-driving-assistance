@@ -293,48 +293,66 @@ def resolve_study_configuration(settings):
     validate_study_settings()
     connect_and_resolve_study_storage()
     saved_configuration = restore_existing_profile_settings()
+    apply_training_profile(saved_configuration)
+    resolve_default_export_path()
+    allocate_fresh_retrain_output()
+    configure_checkpoint_evaluation()
+    return TRAINING_CONFIGURATION, RESOLVED_PATHS
+
+
+def apply_training_profile(saved_configuration):
+    """Resolve new settings unless this output folder owns a saved experiment."""
     apply_subset_execution_settings()
     resolve_manifest_and_model_paths()
-    if saved_configuration is not None:
-        TRAINING_CONFIGURATION.clear()
-        TRAINING_CONFIGURATION.update(saved_configuration)
-    if (
-        SETTINGS["output"]["export_name"]
-        == SETTINGS["profile"]["run_name"] + "-results"
-    ):
-        RESOLVED_PATHS["export"] = RESOLVED_PATHS["run"].with_name(
-            RESOLVED_PATHS["run"].name + "-results"
-        )
-    if SETTINGS.get("retrain", False) and SETTINGS["profile"]["name"] != "setup":
-        output = RESOLVED_PATHS["run"].with_name(
-            RESOLVED_PATHS["run"].name + "-retrain-" + uuid4().hex[:12]
-        )
-        output.mkdir(parents=True, exist_ok=False)
-        TRAINING_CONFIGURATION.update(
-            output=str(output), initialization="pretrained", density_checkpoint=None
-        )
-        RESOLVED_PATHS["run"] = output
-        RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
-        print("Fresh training requested. Previous run preserved. New output:", output)
-    if SETTINGS["action"] == "evaluate":
-        options = SETTINGS["evaluation"]
-        source = Path(options["source_run"] or TRAINING_CONFIGURATION["output"])
-        output = RESOLVED_PATHS["output_root"] / single_name(options["output_name"])
-        if source.resolve() == output.resolve():
-            raise ValueError("Evaluation must use a separate output_name.")
-        TRAINING_CONFIGURATION.update(
-            evaluation_source=str(source),
-            output=str(output),
-            evaluation_split=options["split"],
-            overwrite_existing=False,
-        )
-        TRAINING_CONFIGURATION["evaluation_max_pairs"] = options.get("max_pairs")
-        TRAINING_CONFIGURATION["evaluation_cityscapes_root"] = str(
-            Path(options["cityscapes_root"]).resolve()
-        )
-        RESOLVED_PATHS["run"] = output
-        RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
-    return TRAINING_CONFIGURATION, RESOLVED_PATHS
+    if saved_configuration is None:
+        return
+    TRAINING_CONFIGURATION.clear()
+    TRAINING_CONFIGURATION.update(saved_configuration)
+
+
+def resolve_default_export_path():
+    """Keep a default report folder beside the selected run folder."""
+    expected = SETTINGS["profile"]["run_name"] + "-results"
+    if SETTINGS["output"]["export_name"] != expected:
+        return
+    run = RESOLVED_PATHS["run"]
+    RESOLVED_PATHS["export"] = run.with_name(run.name + "-results")
+
+
+def allocate_fresh_retrain_output():
+    """Give retraining its own folder so prior checkpoints remain recoverable."""
+    if not SETTINGS.get("retrain", False) or SETTINGS["profile"]["name"] == "setup":
+        return
+    run = RESOLVED_PATHS["run"]
+    output = run.with_name(run.name + "-retrain-" + uuid4().hex[:12])
+    output.mkdir(parents=True, exist_ok=False)
+    TRAINING_CONFIGURATION.update(
+        output=str(output), initialization="pretrained", density_checkpoint=None
+    )
+    RESOLVED_PATHS["run"] = output
+    RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
+    print("Fresh training requested. Previous run preserved. New output:", output)
+
+
+def configure_checkpoint_evaluation():
+    """Switch to a separate output only for matched checkpoint evaluation."""
+    if SETTINGS["action"] != "evaluate":
+        return
+    options = SETTINGS["evaluation"]
+    source = Path(options["source_run"] or TRAINING_CONFIGURATION["output"])
+    output = RESOLVED_PATHS["output_root"] / single_name(options["output_name"])
+    if source.resolve() == output.resolve():
+        raise ValueError("Evaluation must use a separate output_name.")
+    TRAINING_CONFIGURATION.update(
+        evaluation_source=str(source),
+        output=str(output),
+        evaluation_split=options["split"],
+        overwrite_existing=False,
+        evaluation_max_pairs=options.get("max_pairs"),
+        evaluation_cityscapes_root=str(Path(options["cityscapes_root"]).resolve()),
+    )
+    RESOLVED_PATHS["run"] = output
+    RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
 
 
 def restore_existing_profile_settings():
@@ -787,6 +805,40 @@ def train_or_analyze_configured_study(action, configuration, annotations, checks
     if action == "evaluate":
         return run_checkpoint_evaluation(annotations, configuration)
     return execute_training(action, configuration, annotations, checks)
+
+
+def run_optional_synthetic_benchmark(enabled):
+    """Measure a synthetic batch-64 ceiling without changing study results."""
+    import time
+
+    import torch
+    import torchvision
+    from torch.utils.data import DataLoader, TensorDataset
+
+    can_run = enabled and torch.cuda.is_available()
+    can_run = can_run and SETTINGS["profile"]["name"] == "full"
+    if not can_run:
+        print("Synthetic batch-64 benchmark skipped for this profile or CUDA state.")
+        return
+    print(f"Benchmarking on: {torch.cuda.get_device_name(0)}")
+    image_count, batch_size = 2000, 64
+    images = torch.randn(image_count, 3, 640, 640, device="cuda", dtype=torch.float16)
+    labels = torch.randn(image_count, 3, 640, 640, device="cuda", dtype=torch.float16)
+    loader = DataLoader(TensorDataset(images, labels), batch_size=batch_size)
+    model = torchvision.models.resnet50(weights=None).to("cuda").half()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    for _ in range(5):
+        model(images[:batch_size])
+    torch.cuda.synchronize()
+    started = time.perf_counter()
+    for batch_images, _ in loader:
+        optimizer.zero_grad()
+        model(batch_images).sum().backward()
+        optimizer.step()
+    torch.cuda.synchronize()
+    elapsed = time.perf_counter() - started
+    print(f"Processed {image_count} images in {elapsed:.2f} seconds.")
+    print(f"Synthetic benchmark throughput: {image_count / elapsed:.2f} images/second.")
 
 
 def display_accuracy_latency_and_density_tables(results, output):

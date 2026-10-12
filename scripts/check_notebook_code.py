@@ -14,6 +14,10 @@ def main():
     notebook_path = PROJECT_ROOT / "notebooks/fog_density_consolidated.ipynb"
     notebook = nbformat.read(notebook_path, as_version=4)
     nbformat.validate(notebook)
+    subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "scripts/check_notebook_readability.py")],
+        check=True,
+    )
     source_directory = PROJECT_ROOT / ".runtime/notebook-code-check"
     source_directory.mkdir(parents=True, exist_ok=True)
     module_paths = set()
@@ -46,7 +50,9 @@ def main():
     subprocess.run(
         [sys.executable, "-m", "ruff", "check", str(notebook_path)], check=True
     )
-    print("PASS: notebook format, Python syntax, lint and module formatting.")
+    print(
+        "PASS: notebook format, readability, Python syntax, lint and module formatting."
+    )
 
 
 if __name__ == "__main__":

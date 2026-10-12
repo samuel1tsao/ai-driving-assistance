@@ -1540,59 +1540,18 @@ def run_detector_comparison(
 ):
     directory = output_directory / f"{model_name}-{comparison_arm}-{seed}"
     directory.mkdir(exist_ok=True)
-    identity = {
-        "model": model_name,
-        "arm": comparison_arm,
-        "seed": seed,
-        "profile": configuration.get("profile_name", "full"),
-        "evaluation_split": configuration.get("evaluation_split", "test"),
-        "planned_epochs": configuration["epochs"],
-    }
+    identity = detector_comparison_identity(
+        model_name, comparison_arm, seed, configuration
+    )
     status_path = directory / "status.json"
-    if (
-        status_path.exists()
-        and json.loads(status_path.read_text()).get("status") == "complete"
-    ):
+    if detector_comparison_is_complete(status_path):
         export_saved_checkpoint(model_name, directory, identity, configuration)
         return json.loads(status_path.read_text())
-    detector = adapter = None
+    detector, adapter = create_detector_comparison_models(
+        model_name, seed, configuration
+    )
     try:
-        seed_all(seed)
-        detector = Detector(
-            model_name,
-            configuration["checkpoints"][model_name],
-            configuration["device"],
-            trainable=True,
-        )
-        seed_all(seed)
-        adapter = FogAdapter().to(configuration["device"])
-        trainable_parameter_count = sum(
-            parameter.numel()
-            for parameter in detector.model.parameters()
-            if parameter.requires_grad
-        )
-        atomic_json(
-            status_path,
-            {
-                **identity,
-                "status": "training",
-                "trainable_detector_parameters": trainable_parameter_count,
-            },
-        )
-        fit_detector(
-            detector,
-            adapter,
-            density_estimator,
-            dataset_partitions,
-            comparison_arm,
-            configuration,
-            directory,
-            seed,
-        )
-        identity.update(read_detector_stop_metadata(directory, configuration))
-        export_trained_model(detector, adapter, directory, identity, configuration)
-        atomic_json(status_path, {**identity, "status": "evaluating"})
-        evaluate_detector_comparison(
+        run_detector_training_and_evaluation(
             detector,
             adapter,
             density_estimator,
@@ -1600,81 +1559,188 @@ def run_detector_comparison(
             configuration,
             directory,
             identity,
-            trainable_parameter_count,
-        )
-        atomic_json(status_path, {**identity, "status": "complete"})
-    except BaseException as error:
-        atomic_json(
             status_path,
-            {
-                **identity,
-                "status": "interrupted"
-                if isinstance(error, KeyboardInterrupt)
-                else "error",
-                "reason": f"{type(error).__name__}: {error}",
-            },
         )
+    except BaseException as error:
+        record_detector_comparison_error(status_path, identity, error)
         raise
     finally:
-        del detector, adapter
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        release_detector_comparison_models(detector, adapter)
     return json.loads(status_path.read_text())
+
+
+def detector_comparison_identity(model_name, comparison_arm, seed, configuration):
+    return {
+        "model": model_name,
+        "arm": comparison_arm,
+        "seed": seed,
+        "profile": configuration.get("profile_name", "full"),
+        "evaluation_split": configuration.get("evaluation_split", "test"),
+        "planned_epochs": configuration["epochs"],
+    }
+
+
+def detector_comparison_is_complete(status_path):
+    return (
+        status_path.exists()
+        and json.loads(status_path.read_text()).get("status") == "complete"
+    )
+
+
+def create_detector_comparison_models(model_name, seed, configuration):
+    seed_all(seed)
+    detector = Detector(
+        model_name,
+        configuration["checkpoints"][model_name],
+        configuration["device"],
+        trainable=True,
+    )
+    seed_all(seed)
+    adapter = FogAdapter().to(configuration["device"])
+    return detector, adapter
+
+
+def run_detector_training_and_evaluation(
+    detector,
+    adapter,
+    density_estimator,
+    dataset_partitions,
+    configuration,
+    directory,
+    identity,
+    status_path,
+):
+    trainable_parameters = record_detector_training_started(
+        status_path, identity, detector
+    )
+    fit_detector(
+        detector,
+        adapter,
+        density_estimator,
+        dataset_partitions,
+        identity["arm"],
+        configuration,
+        directory,
+        identity["seed"],
+    )
+    identity.update(read_detector_stop_metadata(directory, configuration))
+    export_trained_model(detector, adapter, directory, identity, configuration)
+    atomic_json(status_path, {**identity, "status": "evaluating"})
+    evaluate_detector_comparison(
+        detector,
+        adapter,
+        density_estimator,
+        dataset_partitions,
+        configuration,
+        directory,
+        identity,
+        trainable_parameters,
+    )
+    atomic_json(status_path, {**identity, "status": "complete"})
+
+
+def record_detector_training_started(status_path, identity, detector):
+    trainable_parameters = sum(
+        parameter.numel()
+        for parameter in detector.model.parameters()
+        if parameter.requires_grad
+    )
+    atomic_json(
+        status_path,
+        {
+            **identity,
+            "status": "training",
+            "trainable_detector_parameters": trainable_parameters,
+        },
+    )
+    return trainable_parameters
+
+
+def record_detector_comparison_error(status_path, identity, error):
+    status = "interrupted" if isinstance(error, KeyboardInterrupt) else "error"
+    atomic_json(
+        status_path,
+        {**identity, "status": status, "reason": f"{type(error).__name__}: {error}"},
+    )
+
+
+def release_detector_comparison_models(detector, adapter):
+    del detector, adapter
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def run_training(rows, config, reset_setup=True):
     """Validate identity, resume each comparison, and produce the study reports."""
-    checks = preflight(config, rows)
-    if not checks.ready.all():
-        raise RuntimeError(
-            "Preflight failed:\n"
-            + checks.loc[~checks.ready, ["check", "detail"]].to_string(index=False)
-        )
+    require_ready_preflight(config, rows)
     output_directory = Path(config["output"])
-    if config.get("overwrite_existing", False):
-        if config.get("profile_name") != "setup":
-            raise ValueError(
-                "overwrite_existing is only allowed for the setup profile."
-            )
+    validate_setup_overwrite(config)
     output_directory.mkdir(parents=True, exist_ok=True)
     with FileLock(str(output_directory / "run.lock"), timeout=0):
-        if config.get("overwrite_existing", False) and reset_setup:
-            # Preserve this execution's selected-input audit and the active lock.
-            for child in output_directory.iterdir():
-                if child.name in ("run.lock", "subset-selection.json"):
-                    continue
-                if not child.resolve().is_relative_to(output_directory.resolve()):
-                    raise ValueError("Setup cleanup target escapes its output folder.")
-                if child.is_dir():
-                    shutil.rmtree(child)
-                else:
-                    child.unlink()
+        clear_setup_output_if_requested(config, output_directory, reset_setup)
         validate_and_record_run_identity(rows, config, output_directory)
         dataset_partitions = partitions(rows, config)
-        comparison_statuses = []
-        model_names = list(config["checkpoints"])
-        for seed in config["seeds"]:
-            density_estimator = prepare_density_estimator_for_seed(
-                dataset_partitions, config, output_directory, seed
-            )
-            # Rotate the order across seeds to reduce fixed-order timing bias.
-            offset = config["seeds"].index(seed) % len(model_names)
-            for model_name in model_names[offset:] + model_names[:offset]:
-                for comparison_arm in config["arms"]:
-                    comparison_statuses.append(
-                        run_detector_comparison(
-                            model_name,
-                            comparison_arm,
-                            seed,
-                            density_estimator,
-                            dataset_partitions,
-                            config,
-                            output_directory,
-                        )
-                    )
-        from fog_analytics import export_analytics
+        statuses = run_comparison_matrix(dataset_partitions, config, output_directory)
+        return export_training_results(output_directory, rows, statuses)
 
-        return export_analytics(output_directory, rows), pd.DataFrame(
-            comparison_statuses
+
+def require_ready_preflight(config, rows):
+    checks = preflight(config, rows)
+    if checks.ready.all():
+        return
+    failures = checks.loc[~checks.ready, ["check", "detail"]].to_string(index=False)
+    raise RuntimeError("Preflight failed:\n" + failures)
+
+
+def validate_setup_overwrite(config):
+    overwrite = config.get("overwrite_existing", False)
+    if overwrite and config.get("profile_name") != "setup":
+        raise ValueError("overwrite_existing is only allowed for the setup profile.")
+
+
+def clear_setup_output_if_requested(config, output_directory, reset_setup):
+    if not config.get("overwrite_existing", False) or not reset_setup:
+        return
+    for child in output_directory.iterdir():
+        if child.name in ("run.lock", "subset-selection.json"):
+            continue
+        if not child.resolve().is_relative_to(output_directory.resolve()):
+            raise ValueError("Setup cleanup target escapes its output folder.")
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
+def run_comparison_matrix(dataset_partitions, config, output_directory):
+    statuses = []
+    model_names = list(config["checkpoints"])
+    for seed_index, seed in enumerate(config["seeds"]):
+        density = prepare_density_estimator_for_seed(
+            dataset_partitions, config, output_directory, seed
         )
+        model_order = (
+            model_names[seed_index % len(model_names) :]
+            + model_names[: seed_index % len(model_names)]
+        )
+        for model_name in model_order:
+            for arm in config["arms"]:
+                statuses.append(
+                    run_detector_comparison(
+                        model_name,
+                        arm,
+                        seed,
+                        density,
+                        dataset_partitions,
+                        config,
+                        output_directory,
+                    )
+                )
+    return statuses
+
+
+def export_training_results(output_directory, rows, statuses):
+    from fog_analytics import export_analytics
+
+    return export_analytics(output_directory, rows), pd.DataFrame(statuses)
