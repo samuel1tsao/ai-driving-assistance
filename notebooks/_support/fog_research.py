@@ -227,6 +227,8 @@ def select_profile_rows(rows, profile, seed, limits=None):
     limits = limits or profile_limits
     selected = []
     for split in ("detector_train", "density_train", "val"):
+        if limits is not None and split not in limits:
+            continue
         label = "tuning" if split == "val" else f"{profile}:{split}"
         selected.extend(select_scene_safe_rows(rows, limits[split], seed, split, label))
     return sorted(selected, key=lambda row: row["id"])
@@ -242,7 +244,7 @@ def image_tensor(row, size, device):
 
 
 class DensityCNN(nn.Module):
-    """Small scalar regressor trained from scratch; output beta in m^-1."""
+    """Small image-to-beta regressor used as the frozen fog predictor."""
 
     def __init__(self):
         super().__init__()

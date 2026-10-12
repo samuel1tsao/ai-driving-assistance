@@ -2,7 +2,7 @@
 
 Open the [fog density study notebook](notebooks/fog_density_consolidated.ipynb). It runs independent `setup`, `partial-2k`, `partial-5k`, and `full` profiles across **YOLO11n, YOLO11m and DETR**, then exports accuracy, latency, per-class AP, paired differences and charts. See the [research plan](docs/fog-density-research-plan.md) and the [two-dataset validation implementation plan](docs/two-dataset-fog-validation-implementation-plan.md).
 
-Use `SETTINGS["action"] = "density"` to train or load the beta estimator by itself and save its predictions plus held-out beta errors. This stage does not run object detection. Use `"train"` for the separate detector comparison, `"evaluate"` to test saved detector weights on matched labeled clear/fog images, and `"analyze"` to redraw saved reports. The consolidated notebook is the authored source; its Colab copy and support files are generated mirrors. See the [consolidated notebook guide](docs/fog-density-consolidated-notebook.md) and [Colab guide](docs/colab-guide.md).
+The detector study is the notebook's purpose. Its predicted-density arm uses a frozen beta estimator as an input predictor; the paired RGB control receives zero beta. Partial profiles load the completed full-run estimator from `colab-full-study/density-42/best.pt` by default, so they train object detectors and adapters without retraining the density model. Use `"evaluate"` to test saved detector weights on matched labeled clear/fog images, and `"analyze"` to redraw saved reports. The consolidated notebook is the authored source; its Colab copy and support files are generated mirrors. See the [consolidated notebook guide](docs/fog-density-consolidated-notebook.md) and [Colab guide](docs/colab-guide.md).
 
 ## Run on Google Colab
 

@@ -21,7 +21,7 @@ ORCHESTRATION_FUNCTIONS = {
     "run_comparison_matrix",
     "run_detector_comparison",
     "run_detector_training_and_evaluation",
-    "run_density_model_only",
+    "configure_density_predictor_checkpoint",
 }
 
 

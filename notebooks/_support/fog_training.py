@@ -142,7 +142,9 @@ def read_run_continuation_summary(configuration):
     output_directory = Path(configuration["output"])
     expected_runs = []
     for seed in configuration["seeds"]:
-        if "predicted_density" in configuration["arms"]:
+        if "predicted_density" in configuration["arms"] and not configuration.get(
+            "density_checkpoint"
+        ):
             expected_runs.append((f"density-{seed}", configuration["density_epochs"]))
         for model in configuration["checkpoints"]:
             for arm in configuration["arms"]:
@@ -603,169 +605,6 @@ def fit_density(parts, config, directory, seed):
     )
     model.load_state_dict(best_checkpoint["model"])
     return model.eval().requires_grad_(False)
-
-
-def preflight_density_model(config, rows):
-    """Check only beta supervision, checkpoint and prediction inputs."""
-    parts = partitions(rows, config)
-    checks = []
-    mode = config["density_mode"]
-    if mode == "train":
-        training_rows = parts["density_train"]
-        tuning_rows = parts["density_val"]
-        enough_beta_values = len({row["beta"] for row in training_rows}) > 1
-        append_readiness_check(
-            checks,
-            "labeled density training images",
-            bool(training_rows)
-            and all(row["beta"] is not None for row in training_rows)
-            and enough_beta_values,
-            f"{len(training_rows)} images with multiple known beta values",
-        )
-        append_readiness_check(
-            checks,
-            "held-out density check",
-            bool(tuning_rows),
-            f"{len(tuning_rows)} labeled images in the profile evaluation split",
-        )
-    checkpoint = config.get("density_checkpoint")
-    if mode == "load":
-        try:
-            saved = torch.load(checkpoint, map_location="cpu", weights_only=True)
-            compatible = (
-                saved.get("kind") == "fog-density-v1"
-                and saved.get("beta_scale") == BETA_SCALE
-            )
-            append_readiness_check(
-                checks,
-                "saved density checkpoint",
-                compatible,
-                "Checkpoint architecture and beta units match this notebook."
-                if compatible
-                else "Checkpoint type or beta units do not match this notebook.",
-            )
-            training_groups = {tuple(group) for group in saved.get("train_groups", [])}
-            held_out_groups = {
-                (row["dataset"], row["group"]) for row in parts["density_evaluation"]
-            }
-            no_leakage = bool(training_groups) and not (
-                training_groups & held_out_groups
-            )
-            append_readiness_check(
-                checks,
-                "held-out scene separation",
-                no_leakage,
-                "The saved model did not train on the images used for its beta check."
-                if no_leakage
-                else "Checkpoint training scenes overlap the selected beta-check images, or are unrecorded.",
-            )
-        except Exception as error:
-            append_readiness_check(
-                checks,
-                "saved density checkpoint",
-                False,
-                f"{type(error).__name__}: {error}",
-            )
-    prediction_split = config["density_prediction_split"]
-    prediction_rows = [
-        row
-        for row in rows
-        if prediction_split == "all" or row["split"] == prediction_split
-    ]
-    append_readiness_check(
-        checks,
-        "prediction images",
-        bool(prediction_rows),
-        f"{len(prediction_rows)} images selected from {prediction_split}",
-    )
-    append_readiness_check(
-        checks,
-        "device",
-        not config["device"].startswith("cuda") or torch.cuda.is_available(),
-        config["device"],
-    )
-    return pd.DataFrame(checks)
-
-
-def append_readiness_check(checks, name, ready, detail):
-    checks.append({"check": name, "ready": bool(ready), "detail": detail})
-
-
-def run_density_model_only(rows, config):
-    """Train or load one density model, predict beta and save held-out errors."""
-    checks = preflight_density_model(config, rows)
-    if not checks.ready.all():
-        failures = checks.loc[~checks.ready, ["check", "detail"]].to_string(index=False)
-        raise RuntimeError("Fog density setup failed:\n" + failures)
-    output = Path(config["output"])
-    output.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(output / "run.lock"), timeout=0):
-        validate_and_record_run_identity(rows, config, output)
-        parts = partitions(rows, config)
-        checkpoint_directory = output / f"density-{config['density_seed']}"
-        model = fit_density(parts, config, checkpoint_directory, config["density_seed"])
-        selected = [
-            row
-            for row in rows
-            if config["density_prediction_split"] == "all"
-            or row["split"] == config["density_prediction_split"]
-        ]
-        predictions = predict_density_rows(model, selected, config)
-        quality = predict_density_quality(model, parts, config)
-        predictions.to_csv(output / "fog-density-predictions.csv", index=False)
-        quality.to_csv(output / "density-quality.csv", index=False)
-        atomic_json(
-            output / "density-model-summary.json",
-            {
-                "mode": config["density_mode"],
-                "checkpoint": str(checkpoint_directory / "best.pt")
-                if config["density_mode"] == "train"
-                else config["density_checkpoint"],
-                "beta_unit": "m^-1",
-                "prediction_split": config["density_prediction_split"],
-                "prediction_images": len(predictions),
-                "quality_images": int(quality["images"].sum())
-                if not quality.empty
-                else 0,
-            },
-        )
-    return predictions, quality
-
-
-def predict_density_rows(model, rows, config):
-    records = []
-    model.eval()
-    with torch.inference_mode():
-        for row in tqdm(rows, desc="Estimate fog density", mininterval=2):
-            image = image_tensor(row, config["size"], config["device"])
-            records.append(
-                {
-                    "id": row["id"],
-                    "image": row["image"],
-                    "dataset": row["dataset"],
-                    "split": row["split"],
-                    "target_beta": row["beta"],
-                    "predicted_beta": float(model(image).item()),
-                }
-            )
-    return pd.DataFrame(records)
-
-
-def predict_density_quality(model, parts, config):
-    checked_rows = parts["density_evaluation"]
-    predictions = predict_density_rows(model, checked_rows, config)
-    known = predictions[predictions.target_beta.notna()].copy()
-    if known.empty:
-        return pd.DataFrame(columns=["dataset", "images", "MAE_beta", "RMSE_beta"])
-    known["absolute_error"] = (known.predicted_beta - known.target_beta).abs()
-    known["squared_error"] = (known.predicted_beta - known.target_beta) ** 2
-    summary = known.groupby("dataset").agg(
-        images=("id", "size"),
-        MAE_beta=("absolute_error", "mean"),
-        RMSE_squared_error=("squared_error", "mean"),
-    )
-    summary["RMSE_beta"] = np.sqrt(summary.pop("RMSE_squared_error"))
-    return summary.reset_index()
 
 
 @dataclass
@@ -1373,6 +1212,10 @@ def prepare_density_estimator_for_seed(
 ):
     if "predicted_density" not in configuration["arms"]:
         return None
+    if configuration.get("density_checkpoint"):
+        return load_density_predictor(
+            configuration["density_checkpoint"], configuration["device"]
+        )
     density_directory = output_directory / f"density-{seed}"
     density_estimator = fit_density(
         dataset_partitions, configuration, density_directory, seed
@@ -1403,6 +1246,14 @@ def prepare_density_estimator_for_seed(
             columns=["id", "dataset", "target_beta", "predicted_beta"],
         ).to_csv(predictions_path, index=False)
     return density_estimator
+
+
+def load_density_predictor(checkpoint_path, device):
+    """Load the frozen beta estimator used as the detector pipeline predictor."""
+    model = DensityCNN().to(device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    model.load_state_dict(checkpoint["model"])
+    return model.eval().requires_grad_(False)
 
 
 def evaluate_detector_comparison(
@@ -1573,7 +1424,10 @@ def run_checkpoint_evaluation(rows, configuration):
                         raise ValueError("Arm/seed was not trained in the source run.")
                     sources.append((model, arm, seed, checkpoint))
             if "predicted_density" in configuration["arms"]:
-                density_path = source / f"density-{seed}" / "best.pt"
+                density_path = Path(
+                    source_config.get("density_checkpoint")
+                    or source / f"density-{seed}" / "best.pt"
+                )
                 if not density_path.is_file():
                     raise FileNotFoundError(density_path)
         identity_config = dict(
@@ -1586,13 +1440,17 @@ def run_checkpoint_evaluation(rows, configuration):
             },
             evaluation_scope="matched_cityscapes_domain_shift",
         )
-        identity_config["density_sources"] = {
-            str(path): [path.stat().st_size, path.stat().st_mtime_ns]
-            for path in (
+        density_paths = (
+            [Path(source_config["density_checkpoint"])]
+            if source_config.get("density_checkpoint")
+            else [
                 source / f"density-{seed}" / "best.pt"
                 for seed in configuration["seeds"]
-            )
-            if path.exists()
+            ]
+        )
+        identity_config["density_sources"] = {
+            str(path): [path.stat().st_size, path.stat().st_mtime_ns]
+            for path in density_paths
         }
         identity_config["annotation_sources"] = {
             str(path): [path.stat().st_size, path.stat().st_mtime_ns]
@@ -1643,14 +1501,10 @@ def evaluate_saved_comparison(model, arm, seed, checkpoint, rows, config, output
         detector.model.eval()
         adapter.eval()
         if arm == "predicted_density":
-            density = DensityCNN().to(config["device"])
-            payload = torch.load(
-                Path(config["evaluation_source"]) / f"density-{seed}" / "best.pt",
-                map_location=config["device"],
-                weights_only=True,
+            density_checkpoint = source_config.get("density_checkpoint") or (
+                Path(config["evaluation_source"]) / f"density-{seed}" / "best.pt"
             )
-            density.load_state_dict(payload["model"])
-            density.eval().requires_grad_(False)
+            density = load_density_predictor(density_checkpoint, config["device"])
         identity.update(read_detector_stop_metadata(checkpoint.parent, source_config))
         atomic_json(status_path, {**identity, "status": "evaluating"})
         evaluate_detector_comparison(
