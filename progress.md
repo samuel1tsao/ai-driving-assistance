@@ -12,7 +12,7 @@ The user's single-notebook requirement explicitly overrides `docs/coding-standar
 | DONE | Expose the high-level notebook workflow | Visible steps are predictor setup, runtime setup, data preparation, validation, training, analytics, and export. |
 | DONE | Update notebook checks and Colab packaging | Self-contained notebook, Colab mirror, direct-cell AST/Ruff checks pass. |
 | DONE | Run regression and bounded end-to-end checks | 34 unit tests pass; directory and ZIP subset workflows both train, report, reuse checkpoints, and export successfully. No full GPU study launched. |
-| DONE | Preserve Drive outputs and publish the notebook | Backed up the prior Drive notebook, replaced the canonical notebook in place, and verified the downloaded notebook has six helper cells and no helper-file writes/imports. Git publication remains. |
+| DONE | Preserve Drive outputs and publish the notebook | Backed up the prior Drive notebook, replaced the canonical notebook in place, verified the downloaded notebook has six helper cells and no helper-file writes/imports, then pushed the source to `origin/main`. |
 
 No detector methodology, profile settings, trained weights, or checkpoint formats are in scope. Existing user edits in `notebooks/fog_density_detection_research.ipynb` and `reports/fog/` remain untouched.
 
@@ -21,6 +21,8 @@ Plan: `docs/training-run-profiles-implementation-plan.md`
 Implementation checks: `scripts/check_notebook_readability.py` reports exactly six embedded helper cells. The notebook runtime executes those functions directly from the notebook; checked-in support modules are only the local source and test fixtures. Helper code is not exported as extra Colab files.
 
 Drive backup: `fog_density_study_before_self_contained_helpers_20261012.ipynb` (ID `15G0ZpezrGhB3eXMxjXbj3PmKv6ODimZF`). Canonical notebook `fog_density_study.ipynb` (ID `1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC`) was updated 2026-10-12 05:35 UTC and verified by raw readback: 46 cells, six helper cells, no `%%writefile`, and no runtime support imports.
+
+Published source commit: `c024eda` (`Make fog study notebook self-contained and readable`), pushed to `origin/main`. Validation: 34 unit tests, notebook/Colab AST+Ruff checks, and directory and ZIP bounded end-to-end notebook checks all passed.
 
 Goal: add independent setup, partial-2k, partial-5k, and full training profiles to the current fog-density study notebook while preserving the existing full-run continuation contract.
 
