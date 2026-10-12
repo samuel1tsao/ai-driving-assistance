@@ -8,13 +8,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import nbformat
 import torch
 from torch import nn
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_RUNTIME = PROJECT_ROOT / ".runtime" / "checkpoint-regressions"
+SUPPORT_DIRECTORY = PROJECT_ROOT / "notebooks" / "_support"
 
 
 class SmallDetector:
@@ -44,29 +44,12 @@ class CheckpointRegressions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         TEST_RUNTIME.mkdir(parents=True, exist_ok=True)
-        cls.module_directory = tempfile.TemporaryDirectory(dir=TEST_RUNTIME)
-        notebook = nbformat.read(
-            PROJECT_ROOT / "notebooks/fog_density_consolidated.ipynb", as_version=4
-        )
-        for cell in notebook.cells:
-            if cell.cell_type != "code" or not cell.source.startswith("%%writefile"):
-                continue
-            directive, source = cell.source.split("\n", 1)
-            filename = Path(directive.split()[-1]).name
-            if not filename.endswith(".py"):
-                continue
-            destination = Path(cls.module_directory.name) / filename
-            with destination.open(
-                "a" if " -a " in directive else "w", encoding="utf-8"
-            ) as stream:
-                stream.write(source + "\n")
-        sys.path.insert(0, cls.module_directory.name)
+        sys.path.insert(0, str(SUPPORT_DIRECTORY))
         cls.training = importlib.import_module("fog_training")
 
     @classmethod
     def tearDownClass(cls):
-        sys.path.remove(cls.module_directory.name)
-        cls.module_directory.cleanup()
+        sys.path.remove(str(SUPPORT_DIRECTORY))
 
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory(dir=TEST_RUNTIME)

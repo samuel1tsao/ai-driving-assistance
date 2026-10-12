@@ -11,7 +11,7 @@ from uuid import uuid4
 from pathlib import Path, PurePosixPath
 
 import pandas as pd
-from IPython.display import Image, display
+from IPython.display import Image as PreviewImage, display
 
 from fog_analytics import export_analytics
 from fog_research import PROFILE_NAMES, read_manifest, select_profile_rows
@@ -196,7 +196,6 @@ def connect_and_resolve_study_storage():
             )
     ROOT.mkdir(parents=True, exist_ok=True)
     os.chdir(ROOT)
-    (ROOT / "notebooks/_support").mkdir(parents=True, exist_ok=True)
     DATA_ROOT = data_location if data_settings["mode"] == "directory" else ROOT
     RESOLVED_PATHS = {
         "data_location": data_location,
@@ -617,6 +616,11 @@ def prepare_configured_dataset():
     verify_prepared_manifest_files()
 
 
+def prepare_fog_data():
+    """Prepare the selected profile's images and annotations."""
+    return prepare_configured_dataset()
+
+
 def find_or_download_dataset_archive():
     data_settings = SETTINGS["data"]
     bundle = RESOLVED_PATHS["archive"]
@@ -805,6 +809,22 @@ def display_training_readiness_checks(configuration, annotations):
     return checks
 
 
+def validate_fog_data(configuration):
+    """Load the selected annotations and validate every pre-training requirement."""
+    annotations = (
+        []
+        if SETTINGS["action"] == "analyze"
+        else load_and_validate_dataset_annotations(configuration)
+    )
+    display_dataset_split_summary(annotations, configuration)
+    checks = (
+        None
+        if SETTINGS["action"] == "analyze"
+        else display_training_readiness_checks(configuration, annotations)
+    )
+    return annotations, checks
+
+
 def execute_analysis(configuration):
     return export_analytics(configuration["output"])
 
@@ -962,7 +982,7 @@ def display_saved_comparison_figures(output, results):
         "dataset-audit.png",
     ):
         for path in sorted((Path(output) / "figures").glob(pattern)):
-            display(Image(filename=str(path), width=1000))
+            display(PreviewImage(filename=str(path), width=1000))
 
 
 def verify_subset_completion_and_checkpoint_reuse(results, annotations):
@@ -985,7 +1005,14 @@ def verify_subset_completion_and_checkpoint_reuse(results, annotations):
             )
         ]
         for seed in TRAINING_CONFIGURATION["seeds"]:
-            if "predicted_density" in TRAINING_CONFIGURATION["arms"]:
+            has_density_targets = any(
+                row["split"] == "density_train" and row.get("beta") is not None
+                for row in annotations
+            )
+            if (
+                "predicted_density" in TRAINING_CONFIGURATION["arms"]
+                and has_density_targets
+            ):
                 required.extend(
                     RESOLVED_PATHS["run"] / f"density-{seed}" / name
                     for name in ("last.pt", "best.pt")

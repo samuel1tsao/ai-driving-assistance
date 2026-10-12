@@ -1,4 +1,4 @@
-"""Check the standalone Colab notebook mirrors the current profile notebook."""
+"""Check the standalone Colab notebook mirrors the self-contained study."""
 
 import ast
 from pathlib import Path
@@ -18,45 +18,47 @@ MODULE_NAMES = {
 }
 
 
-def source_from_cell(cell):
-    if not cell.source.startswith("%%writefile"):
-        return cell.source
-    return cell.source.split("\n", 1)[1]
-
-
 def main():
     notebook = nbformat.read(NOTEBOOK, as_version=4)
     nbformat.validate(notebook)
-    embedded = {}
-    for cell in notebook.cells:
+    sources = {name: [] for name in MODULE_NAMES}
+    code_sources = []
+    for index, cell in enumerate(notebook.cells):
         if cell.cell_type != "code":
             continue
-        if cell.source.startswith("%%writefile"):
-            target = Path(cell.source.splitlines()[0].split()[-1]).name
-            if target in MODULE_NAMES:
-                if " -a " not in cell.source.splitlines()[0]:
-                    embedded[target] = ""
-                embedded[target] += source_from_cell(cell) + "\n"
-        else:
-            ast.parse(cell.source, filename=f"notebook cell {cell.id}")
-    for name in MODULE_NAMES:
-        expected = (
-            (ROOT / "notebooks/_support" / name).read_text(encoding="utf-8").rstrip()
-        )
-        assert embedded.get(name, "").rstrip() == expected, name
-    all_source = "\n".join(embedded.values())
-    config_source = "\n".join(
-        cell.source for cell in notebook.cells if cell.cell_type == "code"
-    )
+        if "%%writefile" in cell.source:
+            raise AssertionError(f"Colab cell {index} still writes a helper file")
+        ast.parse(cell.source, filename=f"Colab cell {index}")
+        filename = cell.metadata.get("fogStudyImplementation")
+        if filename:
+            if filename not in sources:
+                raise AssertionError(f"unexpected embedded helper: {filename}")
+            sources[filename].append(cell.source)
+            continue
+        code_sources.append(cell.source)
+        tree = ast.parse(cell.source)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith("fog_")
+            ):
+                raise AssertionError(
+                    f"Colab cell {index} imports a separate fog helper"
+                )
+    for filename in MODULE_NAMES:
+        if not sources[filename]:
+            raise AssertionError(f"Colab notebook does not contain {filename}")
+    all_source = "\n".join(source for parts in sources.values() for source in parts)
+    config_source = "\n".join(code_sources)
     for profile in ("setup", "partial-2k", "partial-5k", "full"):
         assert profile in config_source, profile
     assert '"rgb_control", "predicted_density"' in config_source
-    assert "batch_size = 64" in config_source
+    assert "image_count, batch_size = 2000, 64" in all_source
     assert "fog-colab-data.zip" in config_source
     assert "PROFILE_NAMES" in all_source
-    print(
-        "PASS: Colab notebook syntax, embedded modules, profiles, arms and batch-64 benchmark"
-    )
+    assert 'SETTINGS["density_predictor"]' in config_source
+    print("PASS: self-contained Colab code, profiles, detection arms, and benchmark.")
 
 
 if __name__ == "__main__":

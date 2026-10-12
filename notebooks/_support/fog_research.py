@@ -93,6 +93,22 @@ def digest(path):
     return result.hexdigest()
 
 
+def source_module_digest(module_name):
+    """Use embedded source fingerprints in Colab and module files in tests."""
+    notebook_fingerprints = globals().get("NOTEBOOK_SOURCE_DIGESTS")
+    if notebook_fingerprints is not None:
+        return notebook_fingerprints[module_name]
+    return digest(Path(__file__).with_name(module_name))
+
+
+def source_module_digests():
+    """Return stable source fingerprints for the notebook's helper modules."""
+    notebook_fingerprints = globals().get("NOTEBOOK_SOURCE_DIGESTS")
+    if notebook_fingerprints is not None:
+        return dict(notebook_fingerprints)
+    return {path.name: digest(path) for path in Path(__file__).parent.glob("fog_*.py")}
+
+
 def read_manifest(path, verify_images=False):
     """Fail closed on incomplete datasets; never turn missing annotations into empty GT."""
     path = Path(path)
@@ -269,6 +285,14 @@ class DensityCNN(nn.Module):
         )
 
 
+def get_fog_density(images, predictor):
+    """Estimate beta for a batch with the frozen image-to-density predictor."""
+    if predictor is None:
+        raise ValueError("A loaded fog-density predictor is required")
+    with torch.inference_mode():
+        return predictor(images)
+
+
 class FogAdapter(nn.Module):
     """Identity-initialized RGB residual with scalar FiLM at hidden features.
 
@@ -434,10 +458,7 @@ def beta_for(arm, x, row, density):
     if arm == "rgb_control":
         return x.new_zeros((1, 1))
     if arm == "predicted_density":
-        if density is None:
-            raise ValueError("A trained density estimator is required")
-        with torch.no_grad():
-            return density(x)
+        return get_fog_density(x, density)
     if arm == "oracle_density" and row["beta"] is not None:
         return x.new_tensor([[row["beta"]]])
     raise ValueError(
@@ -767,7 +788,7 @@ def _legacy_adapter_experiment(
             r["split"] == "detector_train" and any(r.get("iscrowd", [])) for r in rows
         ),
         "input_sha256": {r["id"]: digest(r["image"]) for r in rows},
-        "source_sha256": digest(__file__),
+        "source_sha256": source_module_digest("fog_research.py"),
     }
     (output / "settings.json").write_text(
         json.dumps(settings, indent=2), encoding="utf-8"

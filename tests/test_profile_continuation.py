@@ -30,6 +30,7 @@ class ProfileContinuation(unittest.TestCase):
         notebook = nbformat.read(ROOT / "notebooks/fog_density_consolidated.ipynb", 4)
         namespace = {}
         exec(notebook.cells[2].source, namespace)
+        exec(notebook.cells[4].source, namespace)
         self.settings = namespace["SETTINGS"]
         self.settings.update(
             runtime_root=str(self.folder / "runtime"),
@@ -165,9 +166,17 @@ class ProfileContinuation(unittest.TestCase):
         configuration, paths = workflow.resolve_study_configuration(settings)
         self.assertNotEqual(paths["run"], previous)
         self.assertEqual(paths["run"].parent, previous.parent)
-        self.assertEqual(configuration["density_sampling"], "balanced_bins")
+        self.assertEqual(configuration["density_sampling"], "natural")
         self.assertEqual(configuration["initialization"], "pretrained")
-        self.assertIsNone(configuration["density_checkpoint"])
+        self.assertEqual(
+            configuration["density_checkpoint"],
+            str(
+                self.folder
+                / "colab-full-study"
+                / "density-42"
+                / "best.pt"
+            ),
+        )
         self.assertFalse((paths["run"] / "settings.json").exists())
         self.assertEqual((previous / "settings.json").read_bytes(), prior_bytes)
         self.assertFalse(workflow.should_reuse_completed_training(configuration))

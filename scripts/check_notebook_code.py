@@ -1,4 +1,4 @@
-"""Validate and lint Python cells, including modules written across append cells."""
+"""Validate direct Python cells and lint the tested local source modules."""
 
 import ast
 import subprocess
@@ -18,41 +18,28 @@ def main():
         [sys.executable, str(PROJECT_ROOT / "scripts/check_notebook_readability.py")],
         check=True,
     )
-    source_directory = PROJECT_ROOT / ".runtime/notebook-code-check"
-    source_directory.mkdir(parents=True, exist_ok=True)
-    module_paths = set()
     for index, cell in enumerate(notebook.cells):
-        if cell.cell_type != "code":
-            continue
-        if not cell.source.startswith("%%writefile"):
+        if cell.cell_type == "code":
             ast.parse(cell.source, filename=f"notebook cell {index}")
-            continue
-        directive, source = cell.source.split("\n", 1)
-        filename = Path(directive.split()[-1]).name
-        if not filename.endswith(".py"):
-            continue
-        module_path = source_directory / filename
-        with module_path.open(
-            "a" if " -a " in directive else "w", encoding="utf-8"
-        ) as stream:
-            stream.write(source + "\n")
-        module_paths.add(module_path)
-    for module_path in module_paths:
-        ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
-    module_arguments = [str(path) for path in sorted(module_paths)]
+    module_paths = sorted((PROJECT_ROOT / "notebooks/_support").glob("fog_*.py"))
+    arguments = [str(path) for path in module_paths]
+    subprocess.run([sys.executable, "-m", "ruff", "check", *arguments], check=True)
     subprocess.run(
-        [sys.executable, "-m", "ruff", "check", *module_arguments], check=True
+        [sys.executable, "-m", "ruff", "format", "--check", *arguments], check=True
     )
     subprocess.run(
-        [sys.executable, "-m", "ruff", "format", "--check", *module_arguments],
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--ignore",
+            "F811",
+            str(notebook_path),
+        ],
         check=True,
     )
-    subprocess.run(
-        [sys.executable, "-m", "ruff", "check", str(notebook_path)], check=True
-    )
-    print(
-        "PASS: notebook format, readability, Python syntax, lint and module formatting."
-    )
+    print("PASS: notebook schema, direct-cell syntax, readability, lint and format.")
 
 
 if __name__ == "__main__":

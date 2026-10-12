@@ -1,6 +1,26 @@
 # Implementation progress
 
+### Single-notebook runtime and readable workflow correction
+
+Goal: make the Colab notebook genuinely self-contained and understandable. Keep detector and checkpoint behavior; define implementation directly in organized, collapsed notebook sections; expose clear high-level predictor, data, validation, training, and analytics calls in the visible workflow.
+
+The user's single-notebook requirement explicitly overrides `docs/coding-standards.md`'s generated `%%writefile` helper-module pattern for the Colab artifact. Local `notebooks/_support/*.py` modules remain regression-test sources; generated notebook implementation cells will contain their Python directly, with intra-module imports resolved through notebook execution order. No helper file will be written or imported at Colab runtime.
+
+| Status | Work item | Acceptance / verification |
+|---|---|---|
+| DONE | Embed the implementation directly in the notebook | No `%%writefile` or runtime support-module imports. Six purpose-labeled helper cells execute in notebook order and remain beneath a collapsed section. |
+| DONE | Expose the high-level notebook workflow | Visible steps are predictor setup, runtime setup, data preparation, validation, training, analytics, and export. |
+| DONE | Update notebook checks and Colab packaging | Self-contained notebook, Colab mirror, direct-cell AST/Ruff checks pass. |
+| DONE | Run regression and bounded end-to-end checks | 34 unit tests pass; directory and ZIP subset workflows both train, report, reuse checkpoints, and export successfully. No full GPU study launched. |
+| DONE | Preserve Drive outputs and publish the notebook | Backed up the prior Drive notebook, replaced the canonical notebook in place, and verified the downloaded notebook has six helper cells and no helper-file writes/imports. Git publication remains. |
+
+No detector methodology, profile settings, trained weights, or checkpoint formats are in scope. Existing user edits in `notebooks/fog_density_detection_research.ipynb` and `reports/fog/` remain untouched.
+
 Plan: `docs/training-run-profiles-implementation-plan.md`
+
+Implementation checks: `scripts/check_notebook_readability.py` reports exactly six embedded helper cells. The notebook runtime executes those functions directly from the notebook; checked-in support modules are only the local source and test fixtures. Helper code is not exported as extra Colab files.
+
+Drive backup: `fog_density_study_before_self_contained_helpers_20261012.ipynb` (ID `15G0ZpezrGhB3eXMxjXbj3PmKv6ODimZF`). Canonical notebook `fog_density_study.ipynb` (ID `1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC`) was updated 2026-10-12 05:35 UTC and verified by raw readback: 46 cells, six helper cells, no `%%writefile`, and no runtime support imports.
 
 Goal: add independent setup, partial-2k, partial-5k, and full training profiles to the current fog-density study notebook while preserving the existing full-run continuation contract.
 

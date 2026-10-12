@@ -28,14 +28,7 @@ def main():
     for index, cell in enumerate(notebook.cells):
         if cell.cell_type != "code":
             continue
-        if cell.source.startswith("%%writefile requirements"):
-            continue
-        source = (
-            cell.source.split("\n", 1)[1]
-            if cell.source.startswith("%%writefile")
-            else cell.source
-        )
-        compile(source, f"notebook cell {index}", "exec")
+        compile(cell.source, f"notebook cell {index}", "exec")
     runtime = ROOT / ".runtime/consolidated-notebook-check"
     output = ROOT / "reports/fog/consolidated-notebook-check"
     settings = notebook.cells[2]
@@ -94,12 +87,30 @@ def main():
         "zip-executed.ipynb" if args.zip else "directory-executed.ipynb"
     )
     shell = InteractiveShell.instance()
-    print("Executing with project Python and IPython cell magics", flush=True)
+    print("Executing self-contained cells with project Python", flush=True)
     try:
         execution_count = 0
         for index, cell in enumerate(notebook.cells):
             if cell.cell_type != "code":
                 continue
+            if "resolve_study_configuration(SETTINGS)" in cell.source:
+                import torch
+
+                fixture_checkpoint = runtime / "synthetic-density-predictor.pt"
+                fixture_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                torch.manual_seed(42)
+                torch.save(
+                    {
+                        "kind": "fog-density-v1",
+                        "beta_scale": shell.user_ns["BETA_SCALE"],
+                        "train_groups": [["nuscenes", "fixture-held-out"]],
+                        "model": shell.user_ns["DensityCNN"]().state_dict(),
+                    },
+                    fixture_checkpoint,
+                )
+                shell.user_ns["SETTINGS"]["density_predictor"]["checkpoint"] = str(
+                    fixture_checkpoint
+                )
             print(f"Executing cell {index}", flush=True)
             execution_count += 1
             with capture_output() as captured:

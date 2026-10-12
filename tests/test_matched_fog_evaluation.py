@@ -3,7 +3,6 @@
 import copy
 import contextlib
 import io
-import importlib
 import json
 import os
 import shutil
@@ -321,20 +320,11 @@ class MatchedFogEvaluation(unittest.TestCase):
         namespace = {}
         original_directory = Path.cwd()
         original_paths = sys.path[:]
-        mocks = []
         try:
             for cell in notebook.cells:
                 if cell.cell_type != "code":
                     continue
                 code = cell.source
-                if code.startswith("%%writefile"):
-                    directive, body = code.split("\n", 1)
-                    path = Path(directive.split()[-1])
-                    with path.open(
-                        "a" if " -a " in directive else "w", encoding="utf-8"
-                    ) as handle:
-                        handle.write(body + "\n")
-                    continue
                 if "subprocess.check_call" in code:
                     continue
                 with (
@@ -342,6 +332,11 @@ class MatchedFogEvaluation(unittest.TestCase):
                     contextlib.redirect_stderr(io.StringIO()),
                 ):
                     exec(compile(code, "notebook fixture cell", "exec"), namespace)
+                if 'SETTINGS["density_predictor"] =' in code:
+                    namespace["SETTINGS"]["density_predictor"].update(
+                        checkpoint=str(source / "density-42" / "best.pt"),
+                        source_run="fixture",
+                    )
                 if "PROFILE_SETTINGS = {" in code:
                     settings = namespace["SETTINGS"]
                     settings.update(
@@ -360,21 +355,23 @@ class MatchedFogEvaluation(unittest.TestCase):
                         device="cpu", amp=False, seeds=[42], size=32
                     )
                     settings["profile"]["size"] = 32
+                    settings["density_predictor"] = {
+                        "checkpoint": str(source / "density-42" / "best.pt"),
+                        "source_run": "fixture",
+                        "seed": 42,
+                    }
                     settings["evaluation"].update(
                         source_run=str(source),
                         cityscapes_root=str(self.root),
                         output_name="notebook-evaluation",
                         max_pairs=1,
                     )
-                if "workflow.resolve_study_configuration" in code:
-                    for name, fake in [
-                        ("Detector", FixtureDetector),
-                        ("FogAdapter", FixtureAdapter),
-                        ("DensityCNN", FixtureDensity),
-                    ]:
-                        mock = patch.object(training, name, fake)
-                        mock.start()
-                        mocks.append(mock)
+                if "resolve_study_configuration(SETTINGS)" in code:
+                    namespace.update(
+                        Detector=FixtureDetector,
+                        FogAdapter=FixtureAdapter,
+                        DensityCNN=FixtureDensity,
+                    )
             self.assertEqual(len(namespace["status"]), 6)
             self.assertTrue(Path(namespace["archive_path"]).is_file())
             self.assertEqual(
@@ -382,19 +379,8 @@ class MatchedFogEvaluation(unittest.TestCase):
                 self.root / "notebook-evaluation",
             )
         finally:
-            for mock in reversed(mocks):
-                mock.stop()
             os.chdir(original_directory)
             sys.path[:] = original_paths
-            for name in (
-                "fog_research",
-                "fog_data",
-                "fog_prepare",
-                "fog_analytics",
-                "fog_training",
-                "fog_notebook",
-            ):
-                importlib.reload(importlib.import_module(name))
 
 
 if __name__ == "__main__":

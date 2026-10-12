@@ -31,6 +31,7 @@ from fog_research import (
     epoch_size,
     image_tensor,
     seed_all,
+    source_module_digests,
     summarize,
 )
 
@@ -1103,9 +1104,7 @@ def build_run_signature(rows, configuration):
         "density_sha256": digest(configuration["density_checkpoint"])
         if configuration.get("density_checkpoint")
         else None,
-        "source_sha256": {
-            path.name: digest(path) for path in Path(__file__).parent.glob("fog_*.py")
-        },
+        "source_sha256": source_module_digests(),
         "versions": {
             package: importlib.metadata.version(package)
             for package in ("torch", "ultralytics", "transformers", "pycocotools")
