@@ -7,6 +7,7 @@ import shutil
 import stat
 import urllib.request
 import zipfile
+from uuid import uuid4
 from pathlib import Path, PurePosixPath
 
 import pandas as pd
@@ -133,8 +134,13 @@ def single_name(value):
 
 def validate_study_settings():
     global ROOT
+    SETTINGS["action"] = str(SETTINGS["action"]).strip().lower()
     if SETTINGS["action"] not in {"train", "preflight", "analyze", "evaluate"}:
         raise ValueError("Unknown action.")
+    if not isinstance(SETTINGS.get("retrain", False), bool):
+        raise ValueError("retrain must be True or False.")
+    if SETTINGS.get("retrain", False) and SETTINGS["action"] != "train":
+        raise ValueError("retrain=True requires action='train'.")
     profile = SETTINGS.get("profile", {})
     profile_name = profile.get("name")
     if profile_name not in PROFILE_NAMES:
@@ -286,8 +292,30 @@ def resolve_study_configuration(settings):
     SETTINGS = settings
     validate_study_settings()
     connect_and_resolve_study_storage()
+    saved_configuration = restore_existing_profile_settings()
     apply_subset_execution_settings()
     resolve_manifest_and_model_paths()
+    if saved_configuration is not None:
+        TRAINING_CONFIGURATION.clear()
+        TRAINING_CONFIGURATION.update(saved_configuration)
+    if (
+        SETTINGS["output"]["export_name"]
+        == SETTINGS["profile"]["run_name"] + "-results"
+    ):
+        RESOLVED_PATHS["export"] = RESOLVED_PATHS["run"].with_name(
+            RESOLVED_PATHS["run"].name + "-results"
+        )
+    if SETTINGS.get("retrain", False) and SETTINGS["profile"]["name"] != "setup":
+        output = RESOLVED_PATHS["run"].with_name(
+            RESOLVED_PATHS["run"].name + "-retrain-" + uuid4().hex[:12]
+        )
+        output.mkdir(parents=True, exist_ok=False)
+        TRAINING_CONFIGURATION.update(
+            output=str(output), initialization="pretrained", density_checkpoint=None
+        )
+        RESOLVED_PATHS["run"] = output
+        RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
+        print("Fresh training requested. Previous run preserved. New output:", output)
     if SETTINGS["action"] == "evaluate":
         options = SETTINGS["evaluation"]
         source = Path(options["source_run"] or TRAINING_CONFIGURATION["output"])
@@ -307,6 +335,59 @@ def resolve_study_configuration(settings):
         RESOLVED_PATHS["run"] = output
         RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
     return TRAINING_CONFIGURATION, RESOLVED_PATHS
+
+
+def restore_existing_profile_settings():
+    """An existing output folder defines the experiment; new defaults do not."""
+    path = RESOLVED_PATHS["run"] / "settings.json"
+    if (
+        SETTINGS["action"] != "train"
+        or SETTINGS.get("retrain", False)
+        or SETTINGS.get("test", {}).get("enabled", False)
+        or SETTINGS["profile"]["name"] == "setup"
+        or not path.exists()
+    ):
+        return None
+    recorded = json.loads(path.read_text(encoding="utf-8"))["config"]
+    if recorded.get("profile_name", "full") != SETTINGS["profile"]["name"]:
+        raise ValueError("Saved output belongs to another profile.")
+    SETTINGS["profile"].update(recorded.get("profile_scope", {}))
+    SETTINGS["profile"]["density_sampling"] = recorded.get(
+        "density_sampling", "natural"
+    )
+    SETTINGS["profile"]["overwrite_existing"] = False
+    recorded["output"] = str(RESOLVED_PATHS["run"])
+    if SETTINGS["profile"]["name"] == "full":
+        recorded.setdefault("profile_name", "full")
+        recorded.setdefault("initialization", "existing_full_run")
+    print("Using this run's recorded training settings (including density sampling).")
+    return recorded
+
+
+def should_reuse_completed_training(configuration):
+    """Check saved experiment statuses without opening images or model weights."""
+    if (
+        SETTINGS["action"] != "train"
+        or SETTINGS["profile"]["name"] == "setup"
+        or SETTINGS.get("retrain", False)
+    ):
+        return False
+    output = Path(configuration["output"])
+    if not (output / "settings.json").is_file():
+        return False
+    directories = [
+        output / f"{model}-{arm}-{seed}"
+        for model in configuration["checkpoints"]
+        for arm in configuration["arms"]
+        for seed in configuration["seeds"]
+    ]
+    return bool(directories) and all(
+        (directory / "results.csv").is_file()
+        and (directory / "status.json").is_file()
+        and json.loads((directory / "status.json").read_text()).get("status")
+        == "complete"
+        for directory in directories
+    )
 
 
 def check_free_space(required=0):
@@ -465,6 +546,11 @@ def prepare_subset():
 
 def prepare_configured_dataset():
     data_settings = SETTINGS["data"]
+    if should_reuse_completed_training(TRAINING_CONFIGURATION):
+        print(
+            "Training already complete. Reusing saved results; data preparation skipped."
+        )
+        return
     if SETTINGS["action"] in {"analyze", "evaluate"}:
         print("Analysis uses saved run outputs; dataset extraction is skipped.")
         return
@@ -558,6 +644,8 @@ def verify_prepared_manifest_files():
 
 
 def load_and_validate_dataset_annotations(configuration):
+    if should_reuse_completed_training(configuration):
+        return []
     if SETTINGS["action"] == "evaluate":
         from fog_data import cityscapes_manifest
 
@@ -625,6 +713,18 @@ def display_dataset_split_summary(annotations, configuration):
 
 
 def display_training_readiness_checks(configuration, annotations):
+    if should_reuse_completed_training(configuration):
+        checks = pd.DataFrame(
+            [
+                {
+                    "check": "saved training complete",
+                    "ready": True,
+                    "detail": "Reuse completed/early-stopped comparisons; no training or inference",
+                }
+            ]
+        )
+        display(checks)
+        return checks
     if SETTINGS["action"] == "evaluate":
         from fog_training import validate_matched_evaluation
 
@@ -661,6 +761,14 @@ def execute_analysis(configuration):
 def execute_training(action, configuration, annotations, checks):
     if action == "preflight":
         return pd.DataFrame(), None
+    if action != "train":
+        raise ValueError("Only action='train' can enter training.")
+    if should_reuse_completed_training(configuration):
+        print(
+            "All comparisons complete. Reusing saved reports with their original settings."
+        )
+        results = execute_analysis(configuration)
+        return results, pd.read_csv(Path(configuration["output"]) / "status.csv")
     if not checks.ready.all():
         print("Training is blocked by the checks above.")
         return pd.DataFrame(), None
@@ -668,6 +776,12 @@ def execute_training(action, configuration, annotations, checks):
 
 
 def train_or_analyze_configured_study(action, configuration, annotations, checks):
+    action = str(action).strip().lower()
+    if action not in {"train", "preflight", "analyze", "evaluate"}:
+        raise ValueError(
+            "Choose train, preflight, analyze or evaluate; unknown actions never train."
+        )
+    print(f"Action: {action} | Output: {configuration['output']}")
     if action == "analyze":
         return execute_analysis(configuration), None
     if action == "evaluate":
@@ -768,6 +882,9 @@ def display_saved_comparison_figures(output, results):
 
 def verify_subset_completion_and_checkpoint_reuse(results, annotations):
     """Check subset artifacts and reuse completed checkpoints without training again."""
+    if should_reuse_completed_training(TRAINING_CONFIGURATION):
+        print("Completed comparisons reused; no checkpoint loading or optimizer steps.")
+        return
     # Fail the test if any stage or required checkpoint/report is missing.
     if SETTINGS["profile"]["name"] != "full" and SETTINGS["action"] == "train":
         required = [

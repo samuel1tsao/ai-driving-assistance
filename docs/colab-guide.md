@@ -2,6 +2,16 @@
 
 Upload `notebooks/fog_density_colab.ipynb` using **File → Upload notebook** and select a GPU runtime. The notebook embeds the current profile-aware support modules and installs dependencies; no repository checkout is needed. Choose `TRAINING_PROFILE` in the first settings cell. `dist/fog-colab-code.zip` is an optional small bundle of the notebook, this guide and the data packager.
 
+## Continue, reuse, analyze, or retrain
+
+`action="train", retrain=False` is the normal rerun. The existing output folder defines the experiment: its recorded data caps, epochs, seeds, model arms and density sampling override newer notebook defaults. Unfinished comparisons resume from checkpoints; once every comparison is complete, saved reports are reused without extracting data, loading model weights or running inference. Early stopping counts as completion. Setup remains a disposable training smoke run and resets its fixed folder.
+
+`action="analyze"` is valid in the main notebook. It only redraws saved reports and never enters the training identity guard. After changing the action or profile, rerun the settings and configuration cells, or Run all. The execution cell prints the actual action and resolved output folder.
+
+Set `retrain=True` with `action="train"` to use current settings and fresh detector/density weights in a new sibling folder named `<run>-retrain-<unique-id>`. The previous run is preserved. To continue the fresh run later, set `output.run_name` to the printed folder name and set retrain back to False. The default export name follows that selected folder; a custom export name stays explicit. Analysis and evaluation reject retrain=True rather than accidentally training.
+
+Continuation still validates actual inputs and checkpoint compatibility. Rejected changes list the specific configuration fields or package versions. Merely upgrading notebook analytics does not change an existing training recipe. For example, `partial-2k-v1` used natural density sampling before balanced sampling became the default; continuing it retains natural sampling, while a fresh retrain can use balanced sampling.
+
 ## Evaluate clear versus fog without training again
 
 Choose the profile that produced your saved checkpoints and set `SETTINGS["action"] = "evaluate"`. `evaluation.source_run` can stay empty to use that profile's saved run, or contain an absolute path to another saved run. Match its model names, seeds and image size. All configured model/arm checkpoints must exist; adding an oracle arm requires a separately trained oracle checkpoint.

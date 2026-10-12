@@ -1111,6 +1111,36 @@ def build_run_signature(rows, configuration):
     }
 
 
+def describe_run_identity_changes(previous, current):
+    """Explain rejected continuation without dumping the selected image list."""
+    changes = []
+    for section in ("config", "versions"):
+        before, after = previous.get(section, {}), current.get(section, {})
+        for name in sorted(set(before) | set(after)):
+            if before.get(name) != after.get(name):
+                if isinstance(before.get(name), dict) and isinstance(
+                    after.get(name), dict
+                ):
+                    fields = sorted(
+                        key
+                        for key in set(before[name]) | set(after[name])
+                        if before[name].get(key) != after[name].get(key)
+                    )
+                    changes.append(
+                        f"{section}.{name}: changed fields {', '.join(fields)}"
+                    )
+                else:
+                    changes.append(
+                        f"{section}.{name}: saved={str(before.get(name, 'not recorded'))[:120]}; requested={str(after.get(name, 'not recorded'))[:120]}"
+                    )
+    for name in ("engine", "density_sha256"):
+        if previous.get(name) != current.get(name):
+            changes.append(
+                f"{name}: saved={previous.get(name)}; requested={current.get(name)}"
+            )
+    return "\n".join(changes[:15]) or "Checkpoint engine compatibility differs."
+
+
 def validate_and_record_run_identity(rows, configuration, output_directory):
     signature = build_run_signature(rows, configuration)
     settings_path = output_directory / "settings.json"
@@ -1161,7 +1191,11 @@ def validate_and_record_run_identity(rows, configuration, output_directory):
                 )
             else:
                 raise ValueError(
-                    "Run configuration, inputs or package versions changed. Choose a new output folder to avoid mixing experiments; in the notebook, update that profile's version setting."
+                    "Run configuration or package versions changed:\n"
+                    + describe_run_identity_changes(previous_signature, signature)
+                    + "\nResume with the saved training settings and compatible packages. "
+                    "Use analyze for saved results, or retrain=True for a separate fresh run. "
+                    "Existing checkpoints were preserved."
                 )
     atomic_json(settings_path, signature)
     atomic_json(output_directory / "input-manifest.json", rows)
