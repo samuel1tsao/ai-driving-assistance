@@ -135,12 +135,35 @@ def single_name(value):
 def validate_study_settings():
     global ROOT
     SETTINGS["action"] = str(SETTINGS["action"]).strip().lower()
-    if SETTINGS["action"] not in {"train", "preflight", "analyze", "evaluate"}:
+    if SETTINGS["action"] not in {
+        "train",
+        "preflight",
+        "analyze",
+        "evaluate",
+        "density",
+    }:
         raise ValueError("Unknown action.")
     if not isinstance(SETTINGS.get("retrain", False), bool):
         raise ValueError("retrain must be True or False.")
     if SETTINGS.get("retrain", False) and SETTINGS["action"] != "train":
         raise ValueError("retrain=True requires action='train'.")
+    density_settings = SETTINGS["density_model"]
+    if density_settings["mode"] not in {"train", "load"}:
+        raise ValueError("density_model.mode must be train or load.")
+    if density_settings["prediction_split"] not in {
+        "all",
+        "detector_train",
+        "density_train",
+        "val",
+        "test",
+    }:
+        raise ValueError("density_model.prediction_split is invalid.")
+    if (
+        not isinstance(density_settings["seed"], int)
+        or isinstance(density_settings["seed"], bool)
+        or density_settings["seed"] < 0
+    ):
+        raise ValueError("density_model.seed must be a nonnegative integer.")
     profile = SETTINGS.get("profile", {})
     profile_name = profile.get("name")
     if profile_name not in PROFILE_NAMES:
@@ -160,6 +183,7 @@ def validate_study_settings():
     single_name(SETTINGS["output"]["run_name"])
     single_name(SETTINGS["output"]["export_name"])
     single_name(SETTINGS["output"]["packages_file"])
+    single_name(density_settings["output_name"])
     ROOT = Path(SETTINGS["runtime_root"])
     if not ROOT.is_absolute() or not Path(SETTINGS["drive_mount"]).is_absolute():
         raise ValueError("runtime_root and drive_mount must be absolute.")
@@ -296,6 +320,7 @@ def resolve_study_configuration(settings):
     apply_training_profile(saved_configuration)
     resolve_default_export_path()
     allocate_fresh_retrain_output()
+    configure_density_model_action()
     configure_checkpoint_evaluation()
     return TRAINING_CONFIGURATION, RESOLVED_PATHS
 
@@ -350,6 +375,39 @@ def configure_checkpoint_evaluation():
         overwrite_existing=False,
         evaluation_max_pairs=options.get("max_pairs"),
         evaluation_cityscapes_root=str(Path(options["cityscapes_root"]).resolve()),
+    )
+    RESOLVED_PATHS["run"] = output
+    RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
+
+
+def configure_density_model_action():
+    """Route density-only work to its own output and resolve checkpoint choice."""
+    profile_run = RESOLVED_PATHS["run"]
+    options = SETTINGS["density_model"]
+    checkpoint = str(options.get("checkpoint", "")).strip()
+    if options["mode"] == "load" and not checkpoint:
+        checkpoint = str(profile_run / f"density-{options['seed']}" / "best.pt")
+    if options["mode"] == "load":
+        checkpoint_path = Path(checkpoint)
+        if not checkpoint_path.is_absolute():
+            checkpoint_path = ROOT / checkpoint_path
+        TRAINING_CONFIGURATION["density_checkpoint"] = str(checkpoint_path.resolve())
+    elif SETTINGS["action"] == "density":
+        TRAINING_CONFIGURATION["density_checkpoint"] = None
+    if SETTINGS["action"] != "density":
+        return
+    TRAINING_CONFIGURATION.update(
+        density_mode=options["mode"],
+        density_prediction_split=options["prediction_split"],
+        density_seed=options["seed"],
+        seeds=[options["seed"]],
+    )
+    output = RESOLVED_PATHS["output_root"] / options["output_name"]
+    TRAINING_CONFIGURATION.update(
+        output=str(output),
+        arms=["predicted_density"],
+        checkpoints={},
+        overwrite_existing=False,
     )
     RESOLVED_PATHS["run"] = output
     RESOLVED_PATHS["export"] = output.with_name(output.name + "-results")
@@ -572,6 +630,9 @@ def prepare_configured_dataset():
     if SETTINGS["action"] in {"analyze", "evaluate"}:
         print("Analysis uses saved run outputs; dataset extraction is skipped.")
         return
+    if SETTINGS["action"] == "density":
+        prepare_density_only_dataset()
+        return
     if SETTINGS["profile"]["name"] != "full":
         prepare_subset()
         return
@@ -585,6 +646,114 @@ def prepare_configured_dataset():
     dataset_archive = find_or_download_dataset_archive()
     validate_and_extract_full_dataset_archive(dataset_archive)
     verify_prepared_manifest_files()
+
+
+def prepare_density_only_dataset():
+    """Stage only beta-labeled Cityscapes images needed for density work."""
+    data_settings = SETTINGS["data"]
+    city_manifest = RESOLVED_PATHS["data_location"] / relative_path(
+        data_settings["manifests"]["city_manifest"]
+    )
+    archive = None
+    if data_settings["mode"] == "zip":
+        if not RESOLVED_PATHS["archive"].is_file():
+            raise FileNotFoundError(RESOLVED_PATHS["archive"])
+        archive = zipfile.ZipFile(RESOLVED_PATHS["archive"])
+        relative_manifest = data_settings["manifests"]["city_manifest"]
+        city_rows = json.loads(archive.read(relative_manifest))
+        manifest_parent = PurePosixPath(relative_manifest).parent
+    else:
+        city_rows = json.loads(city_manifest.read_text(encoding="utf-8"))
+        manifest_parent = PurePosixPath(
+            data_settings["manifests"]["city_manifest"]
+        ).parent
+    try:
+        selected_rows = select_density_action_rows(city_rows)
+        output_manifest = RESOLVED_PATHS["run"] / "density-input" / "cityscapes.json"
+        output_manifest.parent.mkdir(parents=True, exist_ok=True)
+        if archive:
+            extract_density_images(
+                archive, selected_rows, manifest_parent, data_settings
+            )
+        else:
+            resolve_density_directory_images(selected_rows, city_manifest.parent)
+        output_manifest.write_text(json.dumps(selected_rows), encoding="utf-8")
+        TRAINING_CONFIGURATION["city_manifest"] = str(output_manifest)
+        print(
+            f"Fog density input ready: {len(selected_rows)} labeled Foggy Cityscapes images."
+        )
+    finally:
+        if archive:
+            archive.close()
+
+
+def select_density_action_rows(city_rows):
+    mode = SETTINGS["density_model"]["mode"]
+    if SETTINGS["profile"]["name"] == "full":
+        profile_rows = city_rows
+    else:
+        profile_rows = select_subset(city_rows)
+    prediction_split = SETTINGS["density_model"]["prediction_split"]
+    required_rows = [
+        row
+        for row in profile_rows
+        if row["split"] == SETTINGS["profile"]["evaluation_split"]
+        or (mode == "train" and row["split"] in {"density_train", "val"})
+    ]
+    prediction_source = city_rows if prediction_split == "all" else profile_rows
+    prediction_rows = [
+        row
+        for row in prediction_source
+        if prediction_split == "all" or row["split"] == prediction_split
+    ]
+    if not prediction_rows and prediction_split != "all":
+        prediction_rows = [row for row in city_rows if row["split"] == prediction_split]
+    combined = {row["id"]: row for row in required_rows + prediction_rows}
+    return list(combined.values())
+
+
+def extract_density_images(archive, rows, manifest_parent, data_settings):
+    members = {}
+    for row in rows:
+        image = PurePosixPath(str(row["image"]))
+        if image.is_absolute() or "\\" in str(image) or ":" in str(image):
+            raise ValueError(f"Nonportable density image path: {image}")
+        member_parts = []
+        for part in (manifest_parent / image).parts:
+            if part == "..":
+                if not member_parts:
+                    raise ValueError(f"Density image escapes dataset root: {image}")
+                member_parts.pop()
+            elif part != ".":
+                member_parts.append(part)
+        member = "/".join(member_parts)
+        if not member.startswith(tuple(data_settings["allowed_archive_roots"])):
+            raise ValueError(f"Unexpected density image path: {member}")
+        members[member] = row
+    check_free_space(sum(archive.getinfo(name).file_size for name in members))
+    for member, row in members.items():
+        info = archive.getinfo(member)
+        if stat.S_ISLNK(info.external_attr >> 16):
+            raise ValueError(f"Density image is an archive symlink: {member}")
+        target = (ROOT / member).resolve()
+        if not target.is_relative_to(ROOT.resolve()):
+            raise ValueError(f"Density image escapes runtime root: {member}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.is_file():
+            with archive.open(info) as source, target.open("wb") as destination:
+                shutil.copyfileobj(source, destination)
+        row["image"] = str(target)
+
+
+def resolve_density_directory_images(rows, manifest_parent):
+    for row in rows:
+        image = Path(row["image"])
+        if not image.is_absolute():
+            image = manifest_parent / image
+        image = image.resolve()
+        if not image.is_file():
+            raise FileNotFoundError(image)
+        row["image"] = str(image)
 
 
 def find_or_download_dataset_archive():
@@ -688,7 +857,12 @@ def load_and_validate_dataset_annotations(configuration):
             )
         return annotations
     annotations = []
-    for key in ("manifest", "city_manifest"):
+    manifest_keys = (
+        ("city_manifest",)
+        if SETTINGS["action"] == "density"
+        else ("manifest", "city_manifest")
+    )
+    for key in manifest_keys:
         path = Path(configuration[key])
         if not path.is_file():
             raise FileNotFoundError(f"Prepared manifest not found: {path}")
@@ -765,6 +939,12 @@ def display_training_readiness_checks(configuration, annotations):
         )
         display(checks)
         return checks
+    if SETTINGS["action"] == "density":
+        from fog_training import preflight_density_model
+
+        checks = preflight_density_model(configuration, annotations)
+        display(checks)
+        return checks
     checks = preflight(configuration, annotations)
     display(checks)
     if not checks.ready.all():
@@ -795,15 +975,21 @@ def execute_training(action, configuration, annotations, checks):
 
 def train_or_analyze_configured_study(action, configuration, annotations, checks):
     action = str(action).strip().lower()
-    if action not in {"train", "preflight", "analyze", "evaluate"}:
+    if action not in {"train", "preflight", "analyze", "evaluate", "density"}:
         raise ValueError(
-            "Choose train, preflight, analyze or evaluate; unknown actions never train."
+            "Choose train, preflight, analyze, evaluate or density; unknown actions never train."
         )
     print(f"Action: {action} | Output: {configuration['output']}")
     if action == "analyze":
         return execute_analysis(configuration), None
     if action == "evaluate":
         return run_checkpoint_evaluation(annotations, configuration)
+    if action == "density":
+        from fog_training import run_density_model_only
+
+        if not checks.ready.all():
+            raise RuntimeError("Fog density setup is blocked by the checks above.")
+        return run_density_model_only(annotations, configuration)
     return execute_training(action, configuration, annotations, checks)
 
 
@@ -930,6 +1116,40 @@ def display_saved_comparison_figures(output, results):
     ):
         for path in sorted((Path(output) / "figures").glob(pattern)):
             display(Image(filename=str(path), width=1000))
+
+
+def display_density_model_results(predictions, quality, output):
+    """Show beta prediction quality and a small, readable prediction sample."""
+    if predictions.empty:
+        print("No fog density predictions were produced.")
+        return
+    print("Estimated beta is the model's fog density value, in m^-1.")
+    print("Held-out beta prediction quality; lower error is better.")
+    display(quality.round(6))
+    display(
+        predictions[["dataset", "split", "image", "target_beta", "predicted_beta"]]
+        .head(20)
+        .round(6)
+    )
+    print("All predictions saved to:", Path(output) / "fog-density-predictions.csv")
+    known = predictions[predictions.target_beta.notna()]
+    if known.empty:
+        return
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(6, 5))
+    axis.scatter(known.target_beta, known.predicted_beta, alpha=0.6)
+    lower = min(known.target_beta.min(), known.predicted_beta.min())
+    upper = max(known.target_beta.max(), known.predicted_beta.max())
+    axis.plot([lower, upper], [lower, upper], linestyle="--", color="black")
+    axis.set(
+        xlabel="Known beta (m^-1)",
+        ylabel="Estimated beta (m^-1)",
+        title="Fog density estimates versus known values",
+    )
+    axis.grid(alpha=0.2)
+    figure.tight_layout()
+    plt.show()
 
 
 def verify_subset_completion_and_checkpoint_reuse(results, annotations):

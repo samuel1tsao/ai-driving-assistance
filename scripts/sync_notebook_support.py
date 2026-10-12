@@ -9,6 +9,7 @@ import nbformat
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK_PATH = PROJECT_ROOT / "notebooks/fog_density_consolidated.ipynb"
 SUPPORT_DIRECTORY = PROJECT_ROOT / "notebooks/_support"
+MAX_CELL_SOURCE_LINES = 120
 BENCHMARK_CELL = """RUN_SYNTHETIC_BENCHMARK = False
 workflow.run_optional_synthetic_benchmark(RUN_SYNTHETIC_BENCHMARK)
 """
@@ -26,7 +27,34 @@ def definition_starts(lines):
 
 def module_cells(module_path):
     lines = module_path.read_text(encoding="utf-8").splitlines(keepends=True)
-    ranges = zip(definition_starts(lines), definition_starts(lines)[1:])
+    starts = definition_starts(lines)
+    ranges = []
+    chunk_start = starts[0]
+    chunk_definitions = []
+    for definition_start in starts[1:-1]:
+        while (
+            chunk_definitions
+            and definition_start - chunk_start >= MAX_CELL_SOURCE_LINES
+        ):
+            boundary = (
+                definition_start
+                if len(chunk_definitions) == 1
+                else chunk_definitions[-1]
+            )
+            ranges.append((chunk_start, boundary))
+            chunk_definitions = [boundary] if boundary in chunk_definitions else []
+            chunk_start = boundary
+            if boundary == definition_start:
+                break
+        chunk_definitions.append(definition_start)
+    while (
+        len(lines) - chunk_start > MAX_CELL_SOURCE_LINES and len(chunk_definitions) > 1
+    ):
+        boundary = chunk_definitions[-1]
+        ranges.append((chunk_start, boundary))
+        chunk_start = boundary
+        chunk_definitions = [boundary]
+    ranges.append((chunk_start, starts[-1]))
     cells = []
     for index, (start, end) in enumerate(ranges):
         source = "".join(lines[start:end]).rstrip("\n")

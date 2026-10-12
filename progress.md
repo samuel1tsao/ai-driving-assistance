@@ -105,3 +105,9 @@ Goal: keep the single authored Colab notebook understandable from its visible wo
 | DONE | Preserve checkpoint/reuse behavior | The full 34-test suite passed after the refactor, including interruption/recovery, completed-run reuse, profile continuation, output locking and matched checkpoint evaluation. Notebook syntax/lint/format and the readability guard passed. |
 
 The current Colab notebook was updated in place and verified by Drive metadata: ID `1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC`, 366,432 bytes, updated 2026-10-12 01:29:15 UTC. The implementation is published as `a9f3de4` on `origin/main`. The local bounded end-to-end check reached its setup training stage but was stopped by the 30-second command limit, so it is not counted as a pass. The `fog_density_detection_research.ipynb` and existing report/Drive-sync working-tree changes remain unrelated and untouched.
+
+### Standalone density-estimator action
+
+The notebook now has `action="density"` to train or load only the beta estimator, write beta predictions and held-out MAE/RMSE, and show a readable known-versus-estimated beta plot. It prepares only the needed Foggy Cityscapes images and never starts detector training. A saved checkpoint can be passed into the separate detector study with `density_model.mode="load"`. Partial profiles use their selected evaluation rows for predictions; choosing `prediction_split="all"` requests the complete manifest. The notebook guide and README describe this split between estimating fog density and evaluating detection.
+
+Implementation files: `notebooks/_support/fog_notebook.py`, `notebooks/_support/fog_training.py`, `notebooks/fog_density_consolidated.ipynb`, and generated `notebooks/fog_density_colab.ipynb`. Related readability limits now group related helper definitions in collapsed cells, with an upper bound on cell size and total helper-cell count. No tests were run for this change.

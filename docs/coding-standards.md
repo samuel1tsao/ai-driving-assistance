@@ -7,8 +7,8 @@ Readability is a primary requirement alongside correct behavior. A reader should
 - Keep one settings object near the top. Explain the fields that users change, with filesystem and Drive examples.
 - Use a single numbered workflow: configure, set up, load, validate, train, review, export.
 - Give each execution cell one purpose. Prefer one to five statements calling descriptive step functions.
-- Keep implementation sections collapsed initially, but retain ordinary editable Python source. Put one function or cohesive class in each implementation cell; do not encode source inside strings.
-- Treat `scripts/check_notebook_readability.py` as the enforcement point: runtime cells must start collapsed, generated support files must exactly match the notebook, visible workflow cells may contain at most five top-level statements, and named orchestration functions must be flat and no longer than 40 lines.
+- Keep implementation sections collapsed initially, but retain ordinary editable Python source. Group closely related helpers into focused cells of about 120 lines, and keep a very long cohesive function alone when it cannot be split cleanly. Do not encode source inside strings.
+- Treat `scripts/check_notebook_readability.py` as the enforcement point: runtime code cells start collapsed, generated support files match the notebook, grouped implementation cells stay below 140 lines, total implementation cells stay at or below 70, visible workflow cells have at most five top-level statements, and named orchestration functions stay flat and no longer than 40 lines.
 - Edit a support module, then run `scripts/sync_notebook_support.py`; the script rewrites the collapsed cells in the sole authored notebook. Run the readability check before committing.
 - Explain what each step needs and produces. Separate result tables from charts and retain saved outputs in verification copies.
 - Keep setup details out of result explanations. Never label a subset execution check as a scientific result.

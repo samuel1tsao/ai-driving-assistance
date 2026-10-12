@@ -11,6 +11,8 @@ NOTEBOOK_PATH = PROJECT_ROOT / "notebooks/fog_density_consolidated.ipynb"
 SUPPORT_DIRECTORY = PROJECT_ROOT / "notebooks/_support"
 MAX_WORKFLOW_STATEMENTS = 5
 MAX_ORCHESTRATION_LINES = 40
+MAX_IMPLEMENTATION_CELL_LINES = 140
+MAX_IMPLEMENTATION_CELLS = 70
 ORCHESTRATION_FUNCTIONS = {
     "resolve_study_configuration",
     "train_or_analyze_configured_study",
@@ -19,6 +21,7 @@ ORCHESTRATION_FUNCTIONS = {
     "run_comparison_matrix",
     "run_detector_comparison",
     "run_detector_training_and_evaluation",
+    "run_density_model_only",
 }
 
 
@@ -49,6 +52,7 @@ def assembled_support_sources(notebook):
 
 def require_one_definition_per_implementation_cell(notebook):
     started = set()
+    implementation_cells = 0
     for index, cell in enumerate(notebook.cells):
         if cell.cell_type != "code" or not cell.source.startswith("%%writefile"):
             continue
@@ -61,15 +65,27 @@ def require_one_definition_per_implementation_cell(notebook):
             for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
         ]
-        if append and len(definitions) != 1:
+        if append and not definitions:
             raise AssertionError(
-                f"implementation cell {index} must contain one cohesive definition"
+                f"implementation cell {index} must add a named helper or class"
+            )
+        cell_lines = len(cell.source.splitlines())
+        if cell_lines > MAX_IMPLEMENTATION_CELL_LINES and len(definitions) != 1:
+            raise AssertionError(
+                f"implementation cell {index} has {cell_lines} lines; "
+                "grouped cells must be smaller than 140 lines"
             )
         if not append and target.name in started:
             raise AssertionError(
                 f"cell {index} overwrites {target} after its first cell"
             )
         started.add(target.name)
+        implementation_cells += 1
+    if implementation_cells > MAX_IMPLEMENTATION_CELLS:
+        raise AssertionError(
+            f"runtime implementation has {implementation_cells} cells; "
+            f"limit is {MAX_IMPLEMENTATION_CELLS}"
+        )
 
 
 def require_short_flat_orchestration(sources):
