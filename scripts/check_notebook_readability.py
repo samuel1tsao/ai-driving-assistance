@@ -77,6 +77,15 @@ def main():
     assert len(helper_cells) <= MAX_DEFINITION_SECTIONS
     assert "_legacy_adapter_experiment" not in definitions
     assert "setup_fog_density_model" in definitions
+    setup_heading = next(
+        index
+        for index, cell in enumerate(notebook.cells)
+        if cell.cell_type == "markdown"
+        and cell.source.startswith("### Load the fog-density model")
+    )
+    assert notebook.cells[setup_heading + 1].source.strip() == (
+        "fog_predictor = setup_fog_density_model(TRAINING_CONFIGURATION)"
+    ), "The first cell under predictor setup must actually load the model"
     assert any(
         "fog_predictor = setup_fog_density_model(TRAINING_CONFIGURATION)" in cell.source
         for cell in notebook.cells
