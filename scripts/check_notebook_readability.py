@@ -16,7 +16,7 @@ ORCHESTRATION_FUNCTIONS = {
     "run_comparison_matrix",
     "run_detector_comparison",
     "run_detector_training_and_evaluation",
-    "setup_fog_density_model",
+    "resolve_density_predictor_checkpoint",
 }
 
 
@@ -76,20 +76,23 @@ def main():
             ), f"workflow cell {index} should call named steps"
     assert len(helper_cells) <= MAX_DEFINITION_SECTIONS
     assert "_legacy_adapter_experiment" not in definitions
-    assert "setup_fog_density_model" in definitions
+    assert "resolve_density_predictor_checkpoint" in definitions
+    assert "load_fog_density_model" in definitions
     setup_heading = next(
         index
         for index, cell in enumerate(notebook.cells)
         if cell.cell_type == "markdown"
         and cell.source.startswith("### Load the fog-density model")
     )
-    assert notebook.cells[setup_heading + 1].source.strip() == (
-        "fog_predictor = setup_fog_density_model(TRAINING_CONFIGURATION)"
-    ), "The first cell under predictor setup must actually load the model"
-    assert any(
-        "fog_predictor = setup_fog_density_model(TRAINING_CONFIGURATION)" in cell.source
-        for cell in notebook.cells
+    predictor_workflow = notebook.cells[setup_heading + 1].source
+    assert (
+        "resolve_density_predictor_checkpoint(TRAINING_CONFIGURATION)"
+        in predictor_workflow
     )
+    assert "load_fog_density_model(" in predictor_workflow
+    assert "ARM_DENSITY not in" in predictor_workflow
+    assert 'TRAINING_CONFIGURATION["arms"]' in predictor_workflow
+    assert "setup_fog_density_model" not in definitions
     print(
         f"PASS: notebook-only study, centralized constants, {len(helper_cells)} collapsed implementation sections, and high-level workflow."
     )

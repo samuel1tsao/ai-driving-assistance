@@ -101,7 +101,7 @@ def main():
             if cell.cell_type != "code":
                 continue
             if (
-                "fog_predictor = setup_fog_density_model(TRAINING_CONFIGURATION)"
+                "resolve_density_predictor_checkpoint(TRAINING_CONFIGURATION)"
                 in cell.source
             ):
                 import torch
@@ -119,6 +119,9 @@ def main():
                     fixture_checkpoint,
                 )
                 shell.user_ns["SETTINGS"]["density_predictor"]["checkpoint"] = str(
+                    fixture_checkpoint
+                )
+                shell.user_ns["TRAINING_CONFIGURATION"]["density_checkpoint"] = str(
                     fixture_checkpoint
                 )
             print(f"Executing cell {index}", flush=True)

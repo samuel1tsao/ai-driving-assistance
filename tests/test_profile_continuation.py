@@ -259,10 +259,10 @@ class FrozenPredictorSetup(unittest.TestCase):
         torch.save({"model": model.state_dict()}, path)
         return model
 
-    def test_setup_loads_exact_weights_freezes_and_reuses_the_predictor(self):
+    def test_load_freezes_exact_weights_and_reuses_the_predictor(self):
         path = Path(self.config["density_checkpoint"])
         expected = self.save_predictor(path)
-        model = workflow.setup_fog_density_model(self.config)
+        model = workflow.load_fog_density_model(path, "cpu")
         self.assertFalse(model.training)
         self.assertTrue(
             all(not parameter.requires_grad for parameter in model.parameters())
@@ -274,32 +274,26 @@ class FrozenPredictorSetup(unittest.TestCase):
         self.assertEqual(tuple(beta.shape), (2, 1))
         self.assertFalse(beta.requires_grad)
         self.assertTrue(((beta >= 0) & (beta <= workflow.BETA_SCALE)).all())
-        self.assertIs(model, workflow.load_density_predictor(path, "cpu"))
+        self.assertIs(model, workflow.load_fog_density_model(path, "cpu"))
 
     def test_replaced_checkpoint_reloads_weights_at_the_same_path(self):
         path = Path(self.config["density_checkpoint"])
         self.save_predictor(path)
-        previous = workflow.load_density_predictor(path, "cpu")
+        previous = workflow.load_fog_density_model(path, "cpu")
         stamp = path.stat().st_mtime_ns
         self.save_predictor(path, bias=2.0)
         os.utime(path, ns=(stamp + 1000000000, stamp + 1000000000))
-        current = workflow.load_density_predictor(path, "cpu")
+        current = workflow.load_fog_density_model(path, "cpu")
         self.assertIsNot(current, previous)
         self.assertAlmostEqual(current.features[-1].bias.item(), 2.0)
 
-    def test_saved_report_mode_and_rgb_only_never_open_a_predictor(self):
-        with patch.object(
-            workflow,
-            "load_density_predictor",
-            side_effect=AssertionError("no weight loading"),
-        ):
-            self.settings["action"] = workflow.ACTION_ANALYZE
-            self.assertIsNone(workflow.setup_fog_density_model(self.config))
-            self.settings["action"] = workflow.ACTION_TRAIN
-            self.config["arms"] = [workflow.ARM_RGB]
-            self.assertIsNone(workflow.setup_fog_density_model(self.config))
+    def test_full_run_without_saved_predictor_leaves_setup_to_training(self):
+        self.settings["profile"] = {"name": workflow.PROFILE_FULL}
+        self.config["profile_name"] = workflow.PROFILE_FULL
+        self.config["density_checkpoint"] = None
+        self.assertIsNone(workflow.resolve_density_predictor_checkpoint(self.config))
 
-    def test_evaluation_loads_the_source_runs_saved_predictor(self):
+    def test_evaluation_selects_the_source_runs_saved_predictor(self):
         source = self.folder / "source"
         path = (
             source
@@ -312,9 +306,11 @@ class FrozenPredictorSetup(unittest.TestCase):
         )
         self.settings["action"] = workflow.ACTION_EVALUATE
         self.config["evaluation_source"] = str(source)
-        model = workflow.setup_fog_density_model(self.config)
+        self.assertEqual(
+            workflow.resolve_density_predictor_checkpoint(self.config), path
+        )
+        model = workflow.load_fog_density_model(path, "cpu")
         self.assertAlmostEqual(model.features[-1].bias.item(), 1.0)
-        self.assertEqual(workflow.FOG_DENSITY_MODEL_KEY[0], str(path.resolve()))
 
     def test_shared_artifact_names_control_completed_run_detection(self):
         output = Path(self.config["output"])

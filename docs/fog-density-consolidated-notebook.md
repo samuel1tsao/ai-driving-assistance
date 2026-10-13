@@ -21,7 +21,7 @@ Supporting functions are organized by purpose in collapsed cells. Expand them to
 
 ## The fog-density setup actually loads a model
 
-The visible setup cell calls `setup_fog_density_model(TRAINING_CONFIGURATION)`. It opens the saved checkpoint, restores `DensityCNN`, calls `eval()` and `requires_grad_(False)`, and prints the checkpoint path, device, evaluation mode, and frozen state. `get_fog_density(images)` uses this loaded model in inference mode. Subsequent detector comparisons reuse it rather than loading it for every image.
+The visible predictor cell decides whether the density model is needed and selects the checkpoint. `resolve_density_predictor_checkpoint(configuration)` only chooses the saved path; `load_fog_density_model(checkpoint_path, device)` only restores weights, switches to evaluation mode, disables gradients, and returns the cached model. `get_fog_density(images)` uses that model in inference mode. A full run without a completed predictor checkpoint continues or trains the predictor inside the training workflow.
 
 For a new partial profile, the default is the completed estimator from `colab-full-study/density-42/best.pt` under the configured run root. Change `SETTINGS["density_predictor"]["checkpoint"]` if it lives elsewhere. Evaluation loads the source experiment's estimator, so an unrelated current preset cannot silently change the predictor being tested. Missing partial-profile weights fail visibly. Preflight also checks the estimator format, beta units, and independent fitting scenes.
 
