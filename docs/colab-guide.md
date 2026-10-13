@@ -1,22 +1,41 @@
 # Run the fog study in Google Colab
 
-Upload `notebooks/fog_density_colab.ipynb` using **File → Upload notebook** and select a GPU runtime. The notebook embeds the current profile-aware support modules and installs dependencies; no repository checkout is needed. Choose `TRAINING_PROFILE` in the first settings cell. `dist/fog-colab-code.zip` is an optional small bundle of the notebook, this guide and the data packager.
+Open the [current Drive notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC), or upload `notebooks/fog_density_colab.ipynb` and choose a GPU runtime. All study code is in the notebook; no repository checkout, support modules, or file-writing cells are needed. See the [notebook guide](fog-density-consolidated-notebook.md) for the workflow and analytics.
+
+## Configuration
+
+Shared constants and `PROFILE_SETTINGS` are near the top. Change a profile's version there for a new experiment. Setup always uses its disposable fixed folder. **Run settings** chooses the environment, profile, action, data/output paths, evaluation source, and pretrained density checkpoint.
+
+For Drive storage, use locations relative to MyDrive:
+
+```python
+SETTINGS["data"]["location"] = {"kind": "drive", "path": "Research/Fog study"}
+SETTINGS["output"]["location"] = {"kind": "drive", "path": "Research/Fog results"}
+SETTINGS["data"]["mode"] = "zip"
+```
+
+This reads the configured data archive from `MyDrive/Research/Fog study/` and writes runs under `MyDrive/Research/Fog results/`. For a prepared directory, use `mode="directory"` and point at the folder containing `data/` and the referenced images. An absolute local path uses `kind="path"`. A partial profile stages its scene-safe subset locally from either source.
+
+Connect Drive, install dependencies, run the collapsed definitions, and resolve the configuration. The visible **Load the fog-density model** cell actually restores the checkpoint, switches it to evaluation mode, freezes its parameters, and prints the loaded path and state. `get_fog_density(images)` uses that predictor. New partial profiles default to the completed full-run estimator; set `density_predictor.checkpoint` if it moved. Full keeps its existing per-seed continuation.
 
 ## Continue, reuse, analyze, or retrain
 
-`action="train", retrain=False` is the normal rerun. The existing output folder defines the experiment: its recorded data caps, epochs, seeds, model arms and density sampling override newer notebook defaults. Unfinished comparisons resume from checkpoints; once every comparison is complete, saved reports are reused without extracting data, loading model weights or running inference. Early stopping counts as completion. Setup remains a disposable training smoke run and resets its fixed folder.
+- `action="train", retrain=False`: resume unfinished comparisons with their recorded training settings, or reuse completed/early-stopped results. Setup overwrites its fixed output.
+- `action="preflight"`: display readiness checks.
+- `action="analyze"`: read saved CSVs and redraw graphs; no training, inference, or predictor loading.
+- `action="evaluate"`: evaluate saved detector weights on matched labeled clear/fog images in a separate output.
 
-`action="analyze"` is valid in the main notebook. It only redraws saved reports and never enters the training identity guard. After changing the action or profile, rerun the settings and configuration cells, or Run all. The execution cell prints the actual action and resolved output folder.
+`retrain=True` with `train` starts fresh detectors in a sibling folder and preserves the old run. The pretrained density predictor remains the input predictor. To resume that new run later, set `output.run_name` to the printed folder and turn retrain off. After changing settings, rerun configuration and the following workflow cells, or restart and Run all.
 
-Set `retrain=True` with `action="train"` to use current settings and fresh detector/density weights in a new sibling folder named `<run>-retrain-<unique-id>`. The previous run is preserved. To continue the fresh run later, set `output.run_name` to the printed folder name and set retrain back to False. The default export name follows that selected folder; a custom export name stays explicit. Analysis and evaluation reject retrain=True rather than accidentally training.
+Each partial profile starts independently; partial-5k does not continue partial-2k weights. All three models run both comparison arms. The full profile keeps its recorded 30-epoch, multi-seed experiment. Training retains its existing batch/gradient-accumulation contract; the optional synthetic batch-64 benchmark is a separate throughput check.
 
-Continuation still validates actual inputs and checkpoint compatibility. Rejected changes list the specific configuration fields or package versions. Merely upgrading notebook analytics does not change an existing training recipe. For example, `partial-2k-v1` used natural density sampling before balanced sampling became the default; continuing it retains natural sampling, while a fresh retrain can use balanced sampling.
+Checkpoints preserve detector/adapter weights, optimizer, AMP scaler, random state, and cumulative loss history. One writer per run and atomic saves protect interrupted work. Changed inputs or incompatible settings/packages cannot silently mix experiments. A presentation-only notebook refactor does not require retraining compatible weights.
 
-## Evaluate clear versus fog without training again
+## Matched clear/fog evaluation
 
-Choose the profile that produced your saved checkpoints and set `SETTINGS["action"] = "evaluate"`. `evaluation.source_run` can stay empty to use that profile's saved run, or contain an absolute path to another saved run. Match its model names, seeds and image size. All configured model/arm checkpoints must exist; adding an oracle arm requires a separately trained oracle checkpoint.
+Choose the source training profile and set `action="evaluate"`. `evaluation.source_run=""` uses its saved run; an absolute path selects another. Match that experiment's models, seeds, and image size.
 
-Set `evaluation.cityscapes_root` to a folder with these official validation subfolders:
+The evaluation root needs:
 
 ```text
 cityscapes-labeled/
@@ -25,86 +44,30 @@ cityscapes-labeled/
   gtFine/val/<city>/*_gtFine_instanceIds.png
 ```
 
-Each scene needs clear plus beta .005, .01 and .02 images. Bounding boxes come from the same instance mask for all four views. The existing fog archive is density-only and does not supply these detection labels. Missing files stop evaluation; the notebook does not download or invent annotations. Only validation files are scanned, keeping preparation bounded.
+Every scene needs clear, beta .005, .01, and .02 views with shared bounding-box labels from the instance mask. The fog-image archive alone lacks those labels. `max_pairs=100` selects 100 complete scene groups (400 images); `None` uses all available scenes. Missing variants/labels or fitting-scene overlap stops evaluation.
 
-`max_pairs=100` selects a deterministic set of 100 complete scene pairs (400 images); `None` uses every available scene. New predictions, metrics, figures and export ZIP go into `evaluation.output_name`, separate from source training checkpoints. Source and output locks prevent concurrent training/evaluation from mixing results. Changing inputs, source weights or evaluation settings requires a new output name.
+New predictions, tables, figures, and export ZIP go to `evaluation.output_name`; source weights stay intact. Evaluation loads that source experiment's density estimator. Compare fog-minus-control and clear-minus-control deltas for each model and training seed. One seed is exploratory; correlated fog variants are not independent experimental repeats. Unknown-beta nuScenes results are a separate normal-use benchmark, not verified clear performance.
 
-Start with the clear/fog bars and density-minus-control deltas. The proposed pattern is a positive fog delta and negative clear delta within a model. Unknown-beta nuScenes results remain a separate normal-use benchmark; they are not a verified clear dataset. This evaluates transfer to Cityscapes for nuScenes-trained checkpoints. One seed is exploratory, and multiple fog versions of a scene are correlated.
+For a visual record, save a notebook copy with outputs after running. CSVs and PNGs persist in the run even if cell outputs are cleared. `analyze` redraws them without another training run.
 
-Use `analyze` with `SETTINGS["output"]["run_name"]` set to the saved evaluation folder to redraw graphs without images or model weights. Save a notebook copy with outputs after running if you want a visual snapshot. CSVs and PNGs persist independently of cleared cell outputs. The optional synthetic batch-64 benchmark is disabled by default; existing real training settings are preserved.
+## Data bundle and publication
 
-Model/data API versions are pinned to the local research environment in `requirements-colab.txt`; the runtime's installed CUDA-compatible PyTorch/torchvision pair is retained and checked with GPU NMS before training.
+The existing `fog-colab-data.zip` contains prepared nuScenes images/labels and density-only Foggy Cityscapes rows. The prepared bundle measures about 49.25 GiB extracted. Full ZIP extraction with the 15 GiB working reserve requires about 64.25 GiB free; partial profiles stage fewer images. Low-disk mode requires a mounted Drive archive and blocks extra dataset downloads. Code-only changes do not require rebuilding the data archive.
 
-## Configure everything in the first code cell
-
-The first code cell contains storage paths, `ACTION`, `RUN_NAME`, model checkpoints and all study controls. Later cells resolve and display these settings; they do not contain a second set of experiment settings. Defaults retain the three detectors, two arms, three seeds and 30 epochs.
-
-Paths are relative to **MyDrive**, using forward slashes. For example:
-
-```python
-DRIVE_DATA_DIR = "Research/Fog study"
-DRIVE_OUTPUT_DIR = "Research/Fog results"
-DATA_MODE = "zip"
-DATA_ZIP_NAME = "fog-colab-data.zip"
-```
-
-This reads `MyDrive/Research/Fog study/fog-colab-data.zip` and saves runs under `MyDrive/Research/Fog results/`. Do not include `/content/drive/MyDrive` in either relative setting. Spaces and nested folders are supported. Use `""` to select MyDrive itself.
-
-Choose the data mode explicitly:
-
-- `DATA_MODE="zip"` preserves the original workflow: read the ZIP from Drive and extract one dataset copy locally. The free-space requirements below apply.
-- `DATA_MODE="directory"` reads an already-extracted portable dataset directly from Drive without making a local dataset copy. Set `DRIVE_DATA_DIR` to the folder **containing `data/`**, not to `data/` itself. For example, it must contain `data/fog/nuscenes_all.json`, `data/fog/cityscapes.json`, and every image referenced by those manifests. Preserve the portable bundle's complete directory structure, including `.cache/` if present. This mode requires mounted Drive and no URL. It does not extract a ZIP for you.
-
-Code and model caches remain under `RUNTIME_ROOT` in both modes; checkpoints and results use `DRIVE_OUTPUT_DIR`. Directory mode retains the runtime working-space check but does not require the local dataset extraction allowance. It still needs Drive capacity for the extracted data and outputs. The loader retains timestamp normalization for resume and therefore needs write access to referenced images. Moving data roots changes the input paths used by resume validation; use a new `RUN_NAME` when switching modes or data roots for a different experiment.
-
-Run from the top after editing configuration. Start with `ACTION="preflight"` to inspect resolved settings and data checks, then use `"train"` when ready. Hosted Drive directory access and full GPU training have not been validated locally.
-
-## Transfer data once
-
-From the project directory, package the existing prepared nuScenes labels and referenced camera images:
+Build data only when it changes:
 
 ```powershell
 .venv/Scripts/python.exe scripts/package_colab_data.py --include-fog
 ```
 
-Upload `dist/fog-colab-data.zip` to `MyDrive/fog-study/fog-colab-data.zip` in Google Drive. Keep `LOW_DISK_MODE=True`, `USE_DRIVE=True`, and `DATA_ZIP_URL=""` for a runtime with about 100 GB total disk. Low-disk mode requires the complete ZIP under mounted Drive and actual free space for extraction plus a 15 GiB working reserve. It blocks local ZIP downloads and additional Foggy Cityscapes downloads. Pip uses `--no-cache-dir`.
+The final notebook step exports its run to a ZIP beside the output directory. Colab runtime-local files can disappear after a runtime replacement, so use Drive outputs for checkpoint continuation. Save a Drive notebook copy before replacing the main notebook if it has outputs you want to review.
 
-The complete bundle extracts to **49.25 GiB (52.88 GB)**. With the default reserve, at least **64.25 GiB (about 69 GB) must be free after dependency installation**, before extraction. Total capacity includes space already used by Colab. The reserve is an allowance, not a guarantee for extra caches introduced by modified code. Checkpoints and result ZIPs stay in Drive, which needs its own capacity. Code-only changes do not require rebuilding the data ZIP.
-
-Direct HTTPS download is available only after explicitly disabling low-disk mode and requires room for both ZIP and extracted data. The notebook does not publish or share your data.
-
-The supplied data bundle was built with `--include-fog`: 215,319 images referenced by the current prepared manifests (204,894 nuScenes and 10,425 Foggy Cityscapes), totaling about 49.08 GiB of image data. This preserves the prepared selection, rather than copying every image in the raw cache. No separate Foggy Cityscapes download is needed when using this bundle. Upload the ZIP once; Colab extracts it to its own disk. A direct-URL download requires room for both the ZIP and extracted data on that disk.
-
-Use `--dry-run` to estimate size without writing a ZIP. Add `--include-fog` when rebuilding for low-disk mode. Pretrained weights still download when needed. Only with low-disk mode disabled can missing Foggy Cityscapes download from the project's version-1 Kaggle source; that download is estimated at 29.1 GB compressed, plus extraction space, in the existing setup notes.
-
-The ZIP excludes lidar, sweeps, archive copies, environments, old projects and checkpoints. It rewrites image references to relative paths and preserves the full prepared study. All referenced images must exist inside the workspace and nuScenes coverage must be complete. Existing output ZIPs are never overwritten; use `--output` for a new path. Remove an incomplete ZIP after an interrupted packaging attempt before retrying.
-
-nuScenes official downloads require registration/login, so the notebook transfers the data already on your PC. See [nuScenes](https://www.nuscenes.org/nuscenes).
-
-## Train and resume
-
-1. Keep `USE_DRIVE=True` to save checkpoints under `MyDrive/fog-study/runs/colab-full-study`.
-2. Run setup, embedded code restoration, dependency installation and data extraction.
-3. Review `ACTION` and `CONFIG`. Defaults preserve the full three-model, two-arm, three-seed study with 30 epochs. `ACTION='preflight'` checks readiness without training.
-4. Run the remaining training and review cells. For a new experiment, change `RUN_NAME`.
-5. To resume, keep the same notebook, runtime paths, dataset, package versions, configuration and run name. Rerun from the top. Colab image timestamps are normalized so re-extracting identical inputs does not break checkpoint validation. Different inputs/settings/dependencies may require a new run name. Windows checkpoints are not portable resume targets because paths and environment differ.
-6. The final cell exports a ZIP of results and checkpoints into Drive, or starts a browser download when Drive is disabled. Installed versions are recorded in `colab-packages.txt`.
-
-Colab can delete idle/expired virtual machines; runtime-local data must then be loaded again. The full study may exceed a session or your tier's available GPU memory/disk. Check the displayed free disk and allow space for extracted data, Foggy Cityscapes downloads and checkpoints. Drive also needs room for its ZIP and checkpoints. See the [official Colab FAQ](https://research.google.com/colaboratory/faq.html).
-
-## Rebuild and validation
-
-After editing the active support code or `scripts/create_fog_notebook.py`, regenerate the notebook and code bundle. The Colab builder uses that intact generator; the existing local notebook has an unfinished `config.update` call and is preserved unchanged.
+Edit the notebook directly, then create its exact publication copy and optional code bundle:
 
 ```powershell
 .venv/Scripts/python.exe scripts/create_colab_notebook.py
+.venv/Scripts/python.exe scripts/check_notebook_code.py
 .venv/Scripts/python.exe scripts/check_colab.py
 ```
 
-To also validate every image reference in the completed data ZIP and compare sampled image bytes with the originals:
-
-```powershell
-.venv/Scripts/python.exe scripts/check_colab.py --data-zip dist/fog-colab-data.zip
-```
-
-Local validation covers notebook format, code-cell syntax, embedded source restoration and portable ZIP behavior. Hosted Colab GPU execution, Drive authorization, network downloads, full training and resulting chart presentation have not been verified here. To validate them, upload the notebook and follow steps 1–4 above, first with `ACTION='preflight'`, then with `ACTION='train'`.
+The optional `fog-colab-code.zip` contains the standalone notebook, this guide, and the data-packaging script; it contains no support implementation. Unit tests and bounded notebook checks execute the notebook source itself. Local tests do not establish full-study scientific results or hosted Colab runtime behavior.

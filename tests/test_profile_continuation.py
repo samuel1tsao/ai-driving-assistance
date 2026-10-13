@@ -11,11 +11,14 @@ from unittest.mock import patch
 
 import nbformat
 import pandas as pd
+import torch
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "notebooks/_support"))
-import fog_notebook as workflow  # noqa: E402
-from fog_training import describe_run_identity_changes  # noqa: E402
+sys.path.insert(0, str(ROOT))
+from scripts.run_fog_research import load_notebook_runtime  # noqa: E402
+
+workflow = load_notebook_runtime()
+describe_run_identity_changes = workflow.describe_run_identity_changes
 
 
 class ProfileContinuation(unittest.TestCase):
@@ -29,8 +32,11 @@ class ProfileContinuation(unittest.TestCase):
         self.folder = Path(self.temporary.name)
         notebook = nbformat.read(ROOT / "notebooks/fog_density_consolidated.ipynb", 4)
         namespace = {}
-        exec(notebook.cells[2].source, namespace)
-        exec(notebook.cells[4].source, namespace)
+        for cell in notebook.cells:
+            if cell.metadata.get("fogStudyConstants") or cell.metadata.get(
+                "fogStudySettings"
+            ):
+                exec(cell.source, namespace)
         self.settings = namespace["SETTINGS"]
         self.settings.update(
             runtime_root=str(self.folder / "runtime"),
@@ -103,7 +109,7 @@ class ProfileContinuation(unittest.TestCase):
                 return_value=pd.DataFrame([{"mAP50_95": 0.5}]),
             ),
         ):
-            workflow.prepare_configured_dataset()
+            workflow.prepare_fog_data()
             rows = workflow.load_and_validate_dataset_annotations(configuration)
             self.assertEqual(rows, [])
             checks = workflow.display_training_readiness_checks(configuration, rows)
@@ -170,12 +176,7 @@ class ProfileContinuation(unittest.TestCase):
         self.assertEqual(configuration["initialization"], "pretrained")
         self.assertEqual(
             configuration["density_checkpoint"],
-            str(
-                self.folder
-                / "colab-full-study"
-                / "density-42"
-                / "best.pt"
-            ),
+            str(self.folder / "colab-full-study" / "density-42" / "best.pt"),
         )
         self.assertFalse((paths["run"] / "settings.json").exists())
         self.assertEqual((previous / "settings.json").read_bytes(), prior_bytes)
@@ -219,6 +220,138 @@ class ProfileContinuation(unittest.TestCase):
         self.assertIn("versions.torch", message)
         self.assertIn("natural", message)
         self.assertIn("balanced_bins", message)
+
+
+class FrozenPredictorSetup(unittest.TestCase):
+    def setUp(self):
+        runtime = ROOT / ".runtime/predictor-tests"
+        runtime.mkdir(parents=True, exist_ok=True)
+        self.temporary = tempfile.TemporaryDirectory(dir=runtime)
+        self.addCleanup(self.temporary.cleanup)
+        self.folder = Path(self.temporary.name)
+        self.settings = {
+            "action": workflow.ACTION_TRAIN,
+            "profile": {"name": workflow.PROFILE_2K},
+            "density_predictor": {"seed": workflow.DEFAULT_SEED},
+        }
+        self.config = {
+            "output": str(self.folder / "run"),
+            "density_checkpoint": str(self.folder / "predictor.pt"),
+            "profile_name": workflow.PROFILE_2K,
+            "arms": list(workflow.DETECTION_ARMS),
+            "device": "cpu",
+        }
+        for name, value in (
+            ("SETTINGS", self.settings),
+            ("FOG_DENSITY_MODEL", None),
+            ("FOG_DENSITY_MODEL_KEY", None),
+        ):
+            patcher = patch.object(workflow, name, value, create=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def save_predictor(self, path, bias=0.0):
+        model = workflow.DensityCNN()
+        with torch.no_grad():
+            model.features[-1].weight.zero_()
+            model.features[-1].bias.fill_(bias)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"model": model.state_dict()}, path)
+        return model
+
+    def test_setup_loads_exact_weights_freezes_and_reuses_the_predictor(self):
+        path = Path(self.config["density_checkpoint"])
+        expected = self.save_predictor(path)
+        model = workflow.setup_fog_density_model(self.config)
+        self.assertFalse(model.training)
+        self.assertTrue(
+            all(not parameter.requires_grad for parameter in model.parameters())
+        )
+        for key, tensor in expected.state_dict().items():
+            torch.testing.assert_close(tensor, model.state_dict()[key])
+        images = torch.rand(2, 3, 32, 32, requires_grad=True)
+        beta = workflow.get_fog_density(images)
+        self.assertEqual(tuple(beta.shape), (2, 1))
+        self.assertFalse(beta.requires_grad)
+        self.assertTrue(((beta >= 0) & (beta <= workflow.BETA_SCALE)).all())
+        self.assertIs(model, workflow.load_density_predictor(path, "cpu"))
+
+    def test_replaced_checkpoint_reloads_weights_at_the_same_path(self):
+        path = Path(self.config["density_checkpoint"])
+        self.save_predictor(path)
+        previous = workflow.load_density_predictor(path, "cpu")
+        stamp = path.stat().st_mtime_ns
+        self.save_predictor(path, bias=2.0)
+        os.utime(path, ns=(stamp + 1000000000, stamp + 1000000000))
+        current = workflow.load_density_predictor(path, "cpu")
+        self.assertIsNot(current, previous)
+        self.assertAlmostEqual(current.features[-1].bias.item(), 2.0)
+
+    def test_saved_report_mode_and_rgb_only_never_open_a_predictor(self):
+        with patch.object(
+            workflow,
+            "load_density_predictor",
+            side_effect=AssertionError("no weight loading"),
+        ):
+            self.settings["action"] = workflow.ACTION_ANALYZE
+            self.assertIsNone(workflow.setup_fog_density_model(self.config))
+            self.settings["action"] = workflow.ACTION_TRAIN
+            self.config["arms"] = [workflow.ARM_RGB]
+            self.assertIsNone(workflow.setup_fog_density_model(self.config))
+
+    def test_evaluation_loads_the_source_runs_saved_predictor(self):
+        source = self.folder / "source"
+        path = (
+            source
+            / f"{workflow.DENSITY_RUN_PREFIX}-{workflow.DEFAULT_SEED}"
+            / workflow.BEST_CHECKPOINT
+        )
+        self.save_predictor(path, bias=1.0)
+        (source / workflow.RUN_SETTINGS_FILE).write_text(
+            json.dumps({"config": {"density_checkpoint": None}})
+        )
+        self.settings["action"] = workflow.ACTION_EVALUATE
+        self.config["evaluation_source"] = str(source)
+        model = workflow.setup_fog_density_model(self.config)
+        self.assertAlmostEqual(model.features[-1].bias.item(), 1.0)
+        self.assertEqual(workflow.FOG_DENSITY_MODEL_KEY[0], str(path.resolve()))
+
+    def test_shared_artifact_names_control_completed_run_detection(self):
+        output = Path(self.config["output"])
+        directory = (
+            output / f"{workflow.YOLO_SMALL}-{workflow.ARM_RGB}-{workflow.DEFAULT_SEED}"
+        )
+        directory.mkdir(parents=True)
+        (output / "experiment.json").write_text("{}")
+        (directory / "metrics.csv").write_text("score\n0.5\n")
+        (directory / "state.json").write_text('{"status":"complete"}')
+        self.config.update(
+            checkpoints={workflow.YOLO_SMALL: "unused"},
+            arms=[workflow.ARM_RGB],
+            seeds=[workflow.DEFAULT_SEED],
+        )
+        with (
+            patch.object(workflow, "RUN_SETTINGS_FILE", "experiment.json"),
+            patch.object(workflow, "RESULTS_FILE", "metrics.csv"),
+            patch.object(workflow, "STATUS_FILE", "state.json"),
+        ):
+            self.assertTrue(workflow.should_reuse_completed_training(self.config))
+
+    def test_renamed_resume_file_still_requires_a_run_identity(self):
+        output = self.folder / "unidentified"
+        directory = output / "comparison"
+        directory.mkdir(parents=True)
+        (directory / "resume.pt").write_bytes(b"prior-checkpoint")
+        with (
+            patch.object(workflow, "LAST_CHECKPOINT", "resume.pt"),
+            self.assertRaisesRegex(ValueError, "profile identity"),
+        ):
+            workflow.validate_and_record_run_identity(
+                [],
+                {"profile_name": workflow.PROFILE_2K, "density_checkpoint": None},
+                output,
+            )
+        self.assertFalse((output / workflow.RUN_SETTINGS_FILE).exists())
 
 
 if __name__ == "__main__":

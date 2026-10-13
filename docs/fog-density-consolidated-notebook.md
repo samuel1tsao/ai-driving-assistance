@@ -1,88 +1,53 @@
-# Consolidated fog-density notebook
+# Fog-density study notebook
 
-Open the current refactored copy in [Google Colab](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC).
+Open the [current Google Colab notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC). The source is `notebooks/fog_density_consolidated.ipynb`; `fog_density_colab.ipynb` is an exact publication copy. All study implementation lives in the notebook. There are no support Python modules or runtime file-writing cells.
 
-`notebooks/fog_density_consolidated.ipynb` is a self-contained, readable version of the uploaded Colab notebook. It contains visible module cells rather than an escaped `EMBEDDED_FILES` dictionary. Running those cells writes the visible Python modules into the runtime for normal imports.
+## Reading and configuring the notebook
 
-## Configuration
+The first section contains shared constants and `PROFILE_SETTINGS`. Model names, seeds, density scale, run names, checkpoint/report filenames, and training defaults are defined once there. Each profile owns its version. Setup keeps its fixed disposable folder; partial profiles start independently from pretrained detector weights; full continues the saved full experiment.
 
-Edit only the `SETTINGS` cell. Data and output locations are independent:
+The **Run settings** cell chooses environment, profile, action, data/output locations, evaluation source, and the saved density-predictor checkpoint. Data and outputs can use either a Drive location relative to MyDrive or an absolute local path. Prepared ZIP input stages only the selected profile's images; directory input uses the same manifests and annotations.
 
-- `{"kind": "drive", "path": "fog-study"}` resolves relative to the configured Drive mount and MyDrive directory.
-- `{"kind": "path", "path": "/mnt/datasets/fog"}` uses an absolute filesystem directory.
-- `data.mode` selects a prepared ZIP or a prepared directory.
-- `output.location` and `output.run_name` determine where reports and training checkpoints are written.
-- Choose `setup`, `partial-2k`, `partial-5k`, or `full` in `TRAINING_PROFILE`. Partial profiles start from pretrained weights and write to independent directories. The full profile points at the existing `colab-full-study` run by default; keep that name and its recorded settings when continuing it.
-- Reuse the same profile, run name and training settings to resume. Change the run name for a different experiment.
+The visible workflow is:
 
-The resolver builds `RESOLVED_PATHS` and `TRAINING_CONFIGURATION` once. Training settings do not come from a second hidden default configuration. A directory data source must contain the configured prepared manifests and their referenced images. ZIP input uses the same prepared layout; package both datasets with the repository's `scripts/package_colab_data.py --include-fog`.
+1. Connect storage and install dependencies.
+2. Resolve the selected run and its recorded settings.
+3. Load the fog-density model.
+4. Prepare and validate data.
+5. Train/resume detectors or evaluate existing weights.
+6. Read tables and graphs; export checkpoints and reports.
 
-Data may live in Drive while outputs use a mounted filesystem volume, or vice versa. Colab's `/content` storage is temporary. Drive outputs survive runtime replacement. Low-disk mode requires a Drive data source and prevents additional dataset downloads.
+Supporting functions are organized by purpose in collapsed cells. Expand them to inspect or edit implementation; their source is ordinary Python. The unused legacy adapter experiment and duplicate profile/default implementations were removed. Checkpoint recovery, matched validation, and analytics remain because they support the study's requested behavior.
 
-## Behavior and validation
+## The fog-density setup actually loads a model
 
-### Cumulative continuation progress
+The visible setup cell calls `setup_fog_density_model(TRAINING_CONFIGURATION)`. It opens the saved checkpoint, restores `DensityCNN`, calls `eval()` and `requires_grad_(False)`, and prints the checkpoint path, device, evaluation mode, and frozen state. `get_fog_density(images)` uses this loaded model in inference mode. Subsequent detector comparisons reuse it rather than loading it for every image.
 
-Before training, the notebook lists every configured run with its saved overall training percentage, completed epochs, image steps within the current epoch, and evaluation status. Percentages count completed image steps across all planned epochs and include previous sessions. Each restored trainer prints cumulative loss history retained in the checkpoint. Overall training completion does not imply evaluation completion. Eleven CPU regression tests passed, including progress across earlier epochs; a real-data ZIP subset rerun passed with completed checkpoints and continuation output. See the [laptop handoff guide](laptop-handoff.md).
+For a new partial profile, the default is the completed estimator from `colab-full-study/density-42/best.pt` under the configured run root. Change `SETTINGS["density_predictor"]["checkpoint"]` if it lives elsewhere. Evaluation loads the source experiment's estimator, so an unrelated current preset cannot silently change the predictor being tested. Missing partial-profile weights fail visibly. Preflight also checks the estimator format, beta units, and independent fitting scenes.
 
-### Independent profiles and subset execution
+`analyze` and completed-run reuse read saved reports and skip model loading. The existing full run retains its original per-seed predictor/checkpoint continuation; any unfinished historical density training can still resume before its detectors run.
 
-The profile selector is the experiment switch. `setup` runs an all-model smoke profile; `partial-2k` and `partial-5k` run all three models and both comparison arms from pretrained weights on deterministic scene-safe training caps. They use fixed tuning rows for preliminary metrics and do not evaluate final-test rows. ZIP mode reads manifests first and extracts only selected referenced images rather than the entire roughly 53 GB Drive archive. Directory mode copies selected images into local profile storage.
+## Actions and checkpoint continuation
 
-Partial profiles use the completed full-run beta estimator as a frozen predictor. Their setup stages only the labeled nuScenes detection rows; they do not sample or train on Foggy Cityscapes. The full profile keeps its recorded run configuration so its existing checkpoints can continue. nuScenes and Foggy Cityscapes remain separate analysis populations; density-only Foggy rows are never treated as detection negatives.
+- `train`: continue the selected unfinished experiment or reuse completed/early-stopped comparisons. The saved run owns its training settings. `retrain=True` starts fresh in a separate folder; setup overwrites its fixed folder.
+- `preflight`: display readiness checks before training.
+- `analyze`: redraw the saved result tables and graphs without training or inference.
+- `evaluate`: evaluate saved detector weights on matched labeled clear/fog images in a separate output directory.
 
-The legacy `SETTINGS["test"]` switch remains available for the bounded notebook checker. It intentionally narrows that checker to YOLO11n so notebook validation stays inexpensive; it is not a research profile.
+Resume preserves detector and adapter weights, optimizer, AMP scaler, random-number state, cumulative loss history, and completed accumulation boundaries. Atomic checkpoint saves and one writer per run protect interrupted work. Changed inputs/settings/package versions cannot silently mix experiments. A presentation-only refactor can migrate compatible engine metadata while keeping checkpoints.
 
-Test checkpoints and reports use a separate output directory. Test preflight explicitly labels subset scope instead of claiming complete nuScenes coverage. The completion cell checks finite overall metrics, saved checkpoints and reports, and reruns completed training to exercise checkpoint reuse without rewriting checkpoints. This checks completed-run resume. The CPU regression suite additionally checks interrupted detector and density checkpoint recovery; a forced Colab runtime termination remains untested. A one-model checker does not validate YOLO11m or DETR execution; use the `setup` profile for that all-model smoke check.
+## What the comparison measures
 
-The source dataset archive was found in `MyDrive/fog-study/fog-colab-data.zip`. The remote Colab run passed on a T4 GPU with 48 real images: 12 nuScenes detector images and 36 Foggy Cityscapes density images. Both YOLO11n arms completed training and evaluation, required checkpoints/reports were present, overall metrics were finite, and completed-run resume reused checkpoints without rewriting them. The notebook printed `SUBSET E2E PASSED` and exported the results successfully. The first Drive mount failed; the second attempt mounted successfully.
+Compare YOLO11n, YOLO11m, and DETR with RGB control and predicted density. Partial-2k and partial-5k use independent pretrained starts and fixed tuning rows; the full profile uses its held-out final set. The detector batch/accumulation contract is preserved. The optional synthetic batch-64 benchmark is separate from detector training.
 
-The local ZIP and prepared-directory tests both passed on the NVIDIA RTX 2070 using 24 real images, one YOLO11n model, one seed, one detector epoch and one density epoch. Both RGB-control and predicted-density arms completed training and evaluation. The executed notebooks contain finite metrics and rendered charts; the ZIP comparison chart was visually inspected. Checkpoint existence, completed-run resume without checkpoint rewrites, and ZIP export passed. Directory mode accepts prepared manifests with absolute paths inside the configured data root and rewrites selected image references relative to copied subset manifests. These small-data metrics are execution-test outputs, not scientific results.
+The hypothesis benchmark needs matching `leftImg8bit/`, `leftImg8bit_foggy/`, and `gtFine/` assets. The same scenes and bounding-box labels are evaluated in clear, light, moderate, and dense fog conditions. Density-only fog images cannot become detection negatives. nuScenes has unknown physical beta, so its results are not a verified clear benchmark.
 
-Reproduce locally with `.venv/Scripts/python.exe scripts/check_consolidated_notebook.py --zip --images 2`. The runner executes the notebook's cells with IPython, including its visible module-writing cells. It reuses installed project dependencies and records filesystem overrides in the executed copy, leaving the source settings unchanged. Output is `reports/fog/consolidated-notebook-check/zip-executed.ipynb`; the run and ZIP export are saved beside it. Omit `--zip` to test a prepared directory source.
+Outputs include clear/fog metrics, arm differences, seed variation, density-level curves, per-class AP, precision/recall, loss/history and checkpoint health, latency including density cost, sample counts, and the dataset audit. A single training seed cannot establish statistical significance. Loss histories describe the training/tuning split; clear/fog evaluation reports describe checkpoint detection performance on those conditions.
 
-The notebook preserves the uploaded research modules and study defaults. The copied training module's unused `default_config` function has been removed so the notebook settings are the sole experiment defaults. Readable module filenames and report filenames remain internal code conventions.
+## Verification and publication
 
-Dataset extraction validates archive paths and free space. Its completion marker records archive identity and manifest settings instead of blindly trusting a fixed marker. Analysis skips dataset extraction and loading and reads existing run outputs.
+Run `python -m unittest discover -s tests -v`, `scripts/check_notebook_code.py`, and `scripts/check_colab.py` using the project Python. Tests load the notebook itself and cover interruption recovery, optimizer/RNG/history parity, checkpoint reuse, invalid inputs/leakage, concurrent writers, prediction recovery, frozen-predictor loading/reuse, and shared artifact names.
 
-Notebook format and Python cell syntax were checked with nbformat and compilation. Local GPU execution passed for both data modes as described above. Colab dependency installation and GPU/NMS validation now pass on Python 3.13 with Torch 2.11.0+cu130 and torchvision 0.26.0+cu130. Remote subset extraction, training, evaluation, completed-run resume and export all passed. A broader local `pip check` reports existing environment dependency conflicts (including OpenCV/NumPy and missing optional packages); the notebook's tested local paths still executed successfully. The original uploaded notebook is preserved. The legacy `create_colab_notebook.py` generator still produces the older standalone notebook; it does not generate this consolidated notebook.
+Run the directory and ZIP variants of `scripts/check_consolidated_notebook.py --images 2` after changing data or orchestration. Its tiny synthetic predictor is only an integration fixture, not a research result. CPU checks do not prove Colab CUDA, Drive mount, or runtime-termination behavior.
 
-### Colab dependency repair
-
-The initial Colab setup tried to build NumPy 1.26.4 under Python 3.13 because the raw-data devkit restricts NumPy below 2. The [devkit's dependency list](https://github.com/nutonomy/nuscenes-devkit/blob/master/setup/requirements/requirements_base.txt) documents that cap; [NumPy's 1.26 release notes](https://numpy.org/doc/1.26/release/1.26.0-notes.html) describe its Python 3.12 support. This notebook requires already-prepared manifests and does not invoke raw nuScenes preparation, so the devkit dependency and unused preparation imports were removed. The remaining runtime requirements retain Colab's installed torch/torchvision pair, request wheels only, and show pip progress. Fresh dependency setup completed in 29 seconds on the observed T4 runtime.
-
-
-### Verified Colab artifacts
-
-- [Executed remote notebook](https://colab.research.google.com/drive/1ZO0-PYFjQe0xz021KelWqqiat3KLTHJN), with saved execution outputs.
-- [Drive run directory](https://drive.google.com/drive/folders/1UyfxKRln9F4-JfOG3GBhpNBJtO8gy-mE): `MyDrive/fog-study/runs/colab-full-study-smoke-v2`.
-- [Results ZIP](https://drive.google.com/file/d/1PMCcqrG1VChf4Qg96iONu6s30-EIjTbw/view): `colab-full-study-results-smoke-v2.zip` (138,293,716 bytes).
-- Local execution record: `reports/fog/consolidated-notebook-check/colab-executed.ipynb`. Its cell sources preserve the version tested before the readability refactor, and saved outputs contain the passing completion check and export path with no error outputs.
-
-This validates one model, one seed and one epoch on a real-data subset. Full-study completion, the other architectures in Colab, and forced remote runtime termination remain untested. Set `SETTINGS["test"]["enabled"] = False` to restore the configured full-study settings.
-
-
-### Full-study launch
-
-At the user's request, subset mode was disabled and Run all started in the remote Colab notebook. The resolver confirmed YOLO11n, YOLO11m and DETR; seeds 42/43/44; 30 detector epochs; 15 density epochs; both arms; image size 640; and checkpoints every 200 steps. Persistent output is `MyDrive/fog-study/runs/colab-full-study`. The T4 runtime is connected and full dataset preparation is running; full training/completion is not yet verified. The clean local notebook also has subset mode disabled.
-
-### Readability refactor and checkpoint regression coverage
-
-The notebook follows seven visible steps: configure, set up, load data, check readiness, train/evaluate, review, and export. Ordinary Python implementation cells sit under a collapsed section near the top, with one function or class per cell. They replace the escaped embedded-project text while keeping this notebook self-contained: the runtime writes the displayed source files before importing them. Expand that section to inspect or edit the implementation.
-
-Detector training orchestration uses named steps to create a session, restore state, train an epoch, measure validation loss, persist progress, and select the best weights. New partial profiles load the pretrained beta estimator and pass its prediction to the detector adapter. Settings and resolved paths use descriptive names. The [coding standard](coding-standards.md) documents naming, function size, notebook structure, and checkpoint compatibility requirements.
-
-## Pretrained beta predictor
-
-The notebook's main job is the detector comparison. In each `predicted_density` arm, a frozen estimator maps the input image to beta in inverse meters (`m^-1`) and supplies that scalar to the detector adapter. The paired RGB control supplies zero. This isolates whether the beta input changes labeled object-detection performance.
-
-For new partial profiles, the default checkpoint is `MyDrive/fog-study/runs/colab-full-study/density-42/best.pt`. Change `SETTINGS["density_predictor"]["checkpoint"]` only if the saved estimator moves. Preflight checks that the checkpoint uses this notebook's model format, outputs beta in the expected units, and was fitted on separate scenes. A missing or incompatible checkpoint blocks training; it does not silently start a new density-model training run. Partial preparation therefore skips Foggy Cityscapes extraction and uses the selected profile's nuScenes rows.
-
-The existing full profile is treated as a continuation of its saved experiment, including its recorded density checkpoints. Partial profiles use the single completed seed-42 estimator for their detector comparisons, so changes to the estimator require a new profile version and cannot mix with earlier results.
-
-Ten inexpensive CPU regression tests import the actual notebook modules. They cover original pre-refactor reference results, exact detector weights/optimizer/RNG/history parity after interruption and process loss, density checkpoint recovery, completed-run reuse, incompatible configuration rejection, partial prediction repair, prediction-order rejection, failed atomic saves, and concurrent-writer rejection. The interruption tests exposed a partial-accumulation issue: loss statistics and RNG state now roll back to the last completed optimizer boundary before unfinished work is replayed. Existing checkpoint payloads and filenames remain compatible.
-
-Run `.venv/Scripts/python.exe -m unittest discover -s tests -v` and `.venv/Scripts/python.exe scripts/check_notebook_code.py` before expensive training. The code check includes the notebook readability guard: visible workflow cells stay short, orchestration uses named flat steps, every runtime helper cell begins collapsed, and generated support files must match the notebook. The original reference values are stored in `tests/fixtures/pre-refactor-detector-checkpoint.json`; they were generated from the preserved pre-refactor notebook, not the refactored implementation.
-
-The refactored ZIP and prepared-directory subsets passed on the local RTX 2070 with 24 real images, both YOLO11n arms, density training, finite metrics, reports, checkpoints, completed-run reuse, and export. Syntax, lint, and formatting checks passed for the ordinary cells and assembled Python modules. These checks do not establish CUDA interruption parity, Drive timeout behavior, or full-study completion. The earlier successful T4 subset predates this refactor; this new Colab copy has not yet been executed remotely.
-
+Run `scripts/create_colab_notebook.py` to publish the exact notebook mirror. Preserve the current Drive notebook, including any outputs, before replacing its contents. See the [coding standard](coding-standards.md) and [progress record](../progress.md).

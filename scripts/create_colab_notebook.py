@@ -18,13 +18,6 @@ def build():
 
 
 def main():
-    # Keep the executable cells aligned with the locally maintained source modules.
-    import subprocess
-    import sys
-
-    subprocess.run(
-        [sys.executable, str(ROOT / "scripts/sync_notebook_support.py")], check=True
-    )
     notebook = build()
     nbformat.write(notebook, TARGET)
     destination = ROOT / "dist/fog-colab-code.zip"

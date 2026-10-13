@@ -10,12 +10,19 @@ import pandas as pd
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "notebooks/_support"))
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.run_fog_research import load_notebook_runtime  # noqa: E402
 
-from fog_notebook import PROFILE_DEFAULTS  # noqa: E402
-from fog_analytics import add_balanced_bin_rows  # noqa: E402
-from fog_research import density_bin, epoch_indices, epoch_size, select_profile_rows  # noqa: E402
-from fog_training import validate_and_record_run_identity  # noqa: E402
+notebook = load_notebook_runtime()
+PROFILE_SETTINGS = notebook.PROFILE_SETTINGS
+add_balanced_bin_rows = notebook.add_balanced_bin_rows
+density_bin, epoch_indices, epoch_size = (
+    notebook.density_bin,
+    notebook.epoch_indices,
+    notebook.epoch_size,
+)
+select_profile_rows = notebook.select_profile_rows
+validate_and_record_run_identity = notebook.validate_and_record_run_identity
 
 
 def annotation(identifier, split, group, dataset="nuscenes"):
@@ -57,7 +64,7 @@ def metric_row(dataset, density, density_bin_name, score, images):
 class TrainingProfiles(unittest.TestCase):
     def test_profiles_cover_all_models_and_have_independent_scopes(self):
         expected_models = ["YOLO11n", "YOLO11m", "DETR"]
-        for name, profile in PROFILE_DEFAULTS.items():
+        for name, profile in PROFILE_SETTINGS.items():
             self.assertEqual(profile["models"], expected_models)
             self.assertIn(profile["evaluation_split"], {"val", "test"})
             if name == "full":
@@ -65,13 +72,13 @@ class TrainingProfiles(unittest.TestCase):
             else:
                 self.assertEqual(profile["evaluation_split"], "val")
             self.assertIn(profile["density_sampling"], {"natural", "balanced_bins"})
-        self.assertTrue(PROFILE_DEFAULTS["setup"]["overwrite_existing"])
-        self.assertEqual(PROFILE_DEFAULTS["setup"]["run_name"], "setup-check-1")
-        self.assertFalse(PROFILE_DEFAULTS["partial-2k"]["overwrite_existing"])
-        self.assertFalse(PROFILE_DEFAULTS["partial-5k"]["overwrite_existing"])
-        self.assertFalse(PROFILE_DEFAULTS["full"]["overwrite_existing"])
-        self.assertNotRegex(PROFILE_DEFAULTS["partial-2k"]["run_name"], r"-v\d+$")
-        self.assertNotRegex(PROFILE_DEFAULTS["partial-5k"]["run_name"], r"-v\d+$")
+        self.assertTrue(PROFILE_SETTINGS["setup"]["overwrite_existing"])
+        self.assertEqual(PROFILE_SETTINGS["setup"]["run_name"], "setup-check-1")
+        self.assertFalse(PROFILE_SETTINGS["partial-2k"]["overwrite_existing"])
+        self.assertFalse(PROFILE_SETTINGS["partial-5k"]["overwrite_existing"])
+        self.assertFalse(PROFILE_SETTINGS["full"]["overwrite_existing"])
+        self.assertNotRegex(PROFILE_SETTINGS["partial-2k"]["run_name"], r"-v\d+$")
+        self.assertNotRegex(PROFILE_SETTINGS["partial-5k"]["run_name"], r"-v\d+$")
 
     def test_balanced_density_epoch_equalizes_known_bins_deterministically(self):
         rows = [

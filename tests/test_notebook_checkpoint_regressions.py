@@ -1,6 +1,5 @@
 """Exercise notebook checkpoint contracts without downloading models or using a GPU."""
 
-import importlib
 import json
 import sys
 import tempfile
@@ -14,7 +13,8 @@ from torch import nn
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_RUNTIME = PROJECT_ROOT / ".runtime" / "checkpoint-regressions"
-SUPPORT_DIRECTORY = PROJECT_ROOT / "notebooks" / "_support"
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.run_fog_research import load_notebook_runtime  # noqa: E402
 
 
 class SmallDetector:
@@ -44,12 +44,7 @@ class CheckpointRegressions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         TEST_RUNTIME.mkdir(parents=True, exist_ok=True)
-        sys.path.insert(0, str(SUPPORT_DIRECTORY))
-        cls.training = importlib.import_module("fog_training")
-
-    @classmethod
-    def tearDownClass(cls):
-        sys.path.remove(str(SUPPORT_DIRECTORY))
+        cls.training = load_notebook_runtime()
 
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory(dir=TEST_RUNTIME)

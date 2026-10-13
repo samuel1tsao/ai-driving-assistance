@@ -31,7 +31,9 @@ def main():
         compile(cell.source, f"notebook cell {index}", "exec")
     runtime = ROOT / ".runtime/consolidated-notebook-check"
     output = ROOT / "reports/fog/consolidated-notebook-check"
-    settings = notebook.cells[2]
+    settings = next(
+        cell for cell in notebook.cells if cell.metadata.get("fogStudySettings")
+    )
     overrides = {
         "runtime_root": str(runtime),
         "drive_mount": str(ROOT / ".runtime/unused-drive-mount"),
@@ -40,6 +42,11 @@ def main():
         "\n# Local verification overrides (the source notebook is unchanged).\n"
     )
     settings.source += "SETTINGS.update(" + repr(overrides) + ")\n"
+    settings.source += (
+        'SETTINGS["density_predictor"]["checkpoint"] = '
+        + repr(str(runtime / "synthetic-density-predictor.pt"))
+        + "\n"
+    )
     settings.source += (
         'SETTINGS["data"]["location"] = '
         + repr({"kind": "path", "path": str(ROOT / "dist" if args.zip else ROOT)})
@@ -93,7 +100,10 @@ def main():
         for index, cell in enumerate(notebook.cells):
             if cell.cell_type != "code":
                 continue
-            if "resolve_study_configuration(SETTINGS)" in cell.source:
+            if (
+                "fog_predictor = setup_fog_density_model(TRAINING_CONFIGURATION)"
+                in cell.source
+            ):
                 import torch
 
                 fixture_checkpoint = runtime / "synthetic-density-predictor.pt"

@@ -1,4 +1,4 @@
-"""Validate direct Python cells and lint the tested local source modules."""
+"""Validate and lint the notebook, the sole source of study implementation."""
 
 import ast
 import subprocess
@@ -21,11 +21,9 @@ def main():
     for index, cell in enumerate(notebook.cells):
         if cell.cell_type == "code":
             ast.parse(cell.source, filename=f"notebook cell {index}")
-    module_paths = sorted((PROJECT_ROOT / "notebooks/_support").glob("fog_*.py"))
-    arguments = [str(path) for path in module_paths]
-    subprocess.run([sys.executable, "-m", "ruff", "check", *arguments], check=True)
     subprocess.run(
-        [sys.executable, "-m", "ruff", "format", "--check", *arguments], check=True
+        [sys.executable, "-m", "ruff", "format", "--check", str(notebook_path)],
+        check=True,
     )
     subprocess.run(
         [

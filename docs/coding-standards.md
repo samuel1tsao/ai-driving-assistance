@@ -7,9 +7,10 @@ Readability is a primary requirement alongside correct behavior. A reader should
 - Keep one settings object near the top. Explain the fields that users change, with filesystem and Drive examples.
 - Use a single numbered workflow: configure, set up, load, validate, train, review, export.
 - Give each execution cell one purpose. Prefer one to five statements calling descriptive step functions.
-- Keep implementation sections collapsed initially, but retain ordinary editable Python source. Group closely related helpers into focused cells of about 120 lines, and keep a very long cohesive function alone when it cannot be split cleanly. Do not encode source inside strings.
-- Treat `scripts/check_notebook_readability.py` as the enforcement point: runtime code cells start collapsed, generated support files match the notebook, grouped implementation cells stay below 140 lines, total implementation cells stay at or below 70, visible workflow cells have at most five top-level statements, and named orchestration functions stay flat and no longer than 40 lines.
-- Edit a support module, then run `scripts/sync_notebook_support.py`; the script rewrites the collapsed cells in the sole authored notebook. Run the readability check before committing.
+- The notebook is the sole source of study implementation. Keep ordinary editable Python definitions in a few purpose-labeled sections collapsed in Colab and Jupyter; visible cells call the high-level steps. Do not generate helper modules, duplicate implementation in Python files, or encode source inside strings.
+- Use one central constants/profile section for shared names, model specifications, seeds, checkpoint/report filenames, and training defaults. Keep configurable experiment settings separate from fixed contracts. Do not create constants for every dictionary key or every display/style value. Persisted schemas and dataset labels retain their original meanings.
+- `scripts/check_notebook_readability.py` checks that no support implementation exists, definitions are not duplicated, implementation sections start collapsed, visible workflow cells have at most five statements, and named orchestration functions stay short and flat.
+- Edit `notebooks/fog_density_consolidated.ipynb` directly, then run `scripts/create_colab_notebook.py` to copy it to the Colab artifact. Test and CLI tools execute its definition cells directly; they never reconstruct or import generated study modules.
 - Explain what each step needs and produces. Separate result tables from charts and retain saved outputs in verification copies.
 - Keep setup details out of result explanations. Never label a subset execution check as a scientific result.
 
@@ -20,7 +21,7 @@ Readability is a primary requirement alongside correct behavior. A reader should
 - Keep orchestration flat: its body should read as a sequence of named steps. Extract validation, state restoration, gradient accumulation, checkpoint writing and reporting into focused functions.
 - Aim for functions with at most 40 logical lines. Split a longer function when it mixes responsibilities; a cohesive loop or class may be longer when splitting would hide its invariants. Do not add abstraction layers merely to satisfy a count.
 - Avoid nested function closures in new training orchestration, semicolon-separated statements, compressed conditionals, and multiple unrelated actions on one line.
-- Format Python with Ruff using an 88-character target. Imports after dependency installation and module-file generation are intentional notebook exceptions.
+- Format Python with Ruff using an 88-character target. Imports after dependency installation are an intentional notebook exception.
 - Comments explain constraints and recovery decisions. Docstrings describe contracts and side effects when they are not obvious from the function name.
 
 ## Checkpoint compatibility and recovery
@@ -43,7 +44,7 @@ Run the inexpensive checkpoint tests before launching an expensive training work
 .venv/Scripts/python.exe scripts/check_notebook_code.py
 ```
 
-The checkpoint tests extract and import the actual notebook modules. Small CPU models test accumulated-gradient interruption, persisted-checkpoint recovery, optimizer/RNG/history parity, unchanged checkpoint payloads, completed-run reuse, incompatible-run rejection, density recovery, atomic-save failures, concurrent writers, prediction-file repair, and original pre-refactor reference results. They do not download weights or train the study models.
+The checkpoint tests execute the actual notebook definition cells in one shared namespace. Small CPU models test accumulated-gradient interruption, persisted-checkpoint recovery, optimizer/RNG/history parity, unchanged checkpoint payloads, completed-run reuse, incompatible-run rejection, density recovery, atomic-save failures, concurrent writers, prediction-file repair, and original pre-refactor reference results. They do not download weights or train the study models.
 
 When orchestration, data loading, or module boundaries change, also execute the real-data subset:
 

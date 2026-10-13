@@ -2,7 +2,7 @@
 
 Open the [fog density study notebook](notebooks/fog_density_consolidated.ipynb). It runs independent `setup`, `partial-2k`, `partial-5k`, and `full` profiles across **YOLO11n, YOLO11m and DETR**, then exports accuracy, latency, per-class AP, paired differences and charts. See the [research plan](docs/fog-density-research-plan.md) and the [two-dataset validation implementation plan](docs/two-dataset-fog-validation-implementation-plan.md).
 
-The detector study is the notebook's purpose. Its predicted-density arm uses a frozen beta estimator as an input predictor; the paired RGB control receives zero beta. Partial profiles load the completed full-run estimator from `colab-full-study/density-42/best.pt` by default, so they train object detectors and adapters without retraining the density model. Use `"evaluate"` to test saved detector weights on matched labeled clear/fog images, and `"analyze"` to redraw saved reports. The consolidated notebook is the authored source; its Colab copy and support files are generated mirrors. See the [consolidated notebook guide](docs/fog-density-consolidated-notebook.md) and [Colab guide](docs/colab-guide.md).
+The detector study is the notebook's purpose. Its predicted-density arm uses a frozen beta estimator as an input predictor; the paired RGB control receives zero beta. Partial profiles load the completed full-run estimator from `colab-full-study/density-42/best.pt` by default, so they train object detectors and adapters without retraining the density model. Use `"evaluate"` to test saved detector weights on matched labeled clear/fog images, and `"analyze"` to redraw saved reports. The consolidated notebook is the sole implementation source; its Colab copy is an exact mirror. Test and CLI tools execute notebook definitions directly; no support modules are generated or imported. Shared constants and profile settings are centralized near the top, and the visible predictor step actually loads and freezes the saved model. See the [consolidated notebook guide](docs/fog-density-consolidated-notebook.md) and [Colab guide](docs/colab-guide.md).
 
 ## Run on Google Colab
 
@@ -10,7 +10,7 @@ See the [proposed setup, partial and full training profiles](docs/training-run-p
 
 For profile configuration, checkpoint continuation and validation notes, see [the consolidated notebook guide](docs/fog-density-consolidated-notebook.md). Partial profiles use fixed tuning rows for preliminary analysis; the full profile continues the existing full run and evaluates the final held-out set.
 
-All Colab settings now live in the first code cell. Set `DRIVE_DATA_DIR` relative to MyDrive and choose `DATA_MODE="zip"` for local extraction or `"directory"` for an existing extracted Drive dataset. See [configuration examples](docs/colab-guide.md#configure-everything-in-the-first-code-cell).
+Shared names/defaults and `PROFILE_SETTINGS` live in the first code cell. Choose the run in **Run settings**; set `SETTINGS["data"]["location"]` relative to MyDrive or to an absolute local path, and choose `SETTINGS["data"]["mode"]="zip"` or `"directory"`. See [configuration examples](docs/colab-guide.md#configuration).
 
 Upload [the standalone Colab notebook](notebooks/fog_density_colab.ipynb) and select a GPU runtime. Low-disk mode keeps the complete dataset ZIP and checkpoints in Drive, blocks extra dataset downloads, and requires about 64.25 GiB free before extraction (49.25 GiB data plus 15 GiB working space). It embeds the code, installs dependencies without a pip download cache, and downloads model weights when needed. Follow the [Colab guide](docs/colab-guide.md). The optional code bundle is `dist/fog-colab-code.zip`.
 
@@ -46,12 +46,12 @@ From this project directory in PowerShell:
 
 Use the project Python kernel, then review the first settings cell:
 
-1. Set `CITY_ROOT` to the Foggy Cityscapes directory. If it is absent, the notebook automatically downloads the same Kaggle source as your supplied notebook (about 29.1 GB compressed, plus extraction). Set `DOWNLOAD_FOG_IMAGES=False` only for an intentional no-download preflight.
-2. The nuScenes keyframe release is already complete on this computer. If you add or replace sensor files later, rerun preparation; it requires complete six-camera keyframe coverage and stops while any expected image is missing.
-3. Keep `ACTION='train'` and **Restart Kernel and Run All**. Preflight displays precise blockers before training. Once ready, all configured models/arms run automatically.
-4. To resume, use the same output directory and identical settings. To change an experiment, choose a new output directory. To reopen results only, set `ACTION='analyze'`.
+1. Set `RUN_ENVIRONMENT="local"` and point the **Run settings** data and output locations at your prepared data and chosen run root.
+2. Select the training profile and verify the saved density-predictor checkpoint path.
+3. Use `SETTINGS["action"]="train"` and **Restart Kernel and Run All** to resume/train, or `"preflight"` to check readiness.
+4. Use `"analyze"` for saved reports or `"evaluate"` for the labeled matched clear/fog benchmark.
 
-The full profile uses 30 detector epochs, 15 density epochs, seeds 42/43/44, 640-pixel square inputs, single-image microsteps with four accumulated gradients, and mixed-precision training on CUDA. Partial profiles use seed 42, five epochs, deterministic scene-safe caps and balanced Foggy Cityscapes beta-bin sampling for density training. The full profile keeps natural density sampling so an existing full checkpoint can continue without changing its training distribution. The separate synthetic GPU benchmark uses batch 64; real detector training remains batch-one with accumulation four.
+The full profile uses 30 detector epochs, 15 density epochs, seeds 42/43/44, 640-pixel square inputs, single-image microsteps with four accumulated gradients, and mixed-precision training on CUDA. Partial profiles use seed 42, five epochs, deterministic scene-safe caps and a frozen, already-trained density predictor. The full profile keeps natural density sampling so an existing full checkpoint can continue without changing its training distribution. The separate synthetic GPU benchmark uses batch 64; real detector training remains batch-one with accumulation four.
 
 ## Run from a terminal
 
@@ -74,7 +74,7 @@ Run preparation and confirm complete coverage before training:
 .venv/Scripts/python.exe scripts/run_fog_research.py train
 ```
 
-These commands resume automatically when repeated. JSON overrides are supported with `--config path.json`; valid fields are documented by `default_config` in `notebooks/_support/fog_training.py`. Public detector weights can be fetched independently:
+These commands resume automatically when repeated. JSON overrides are supported with `--config path.json`; valid fields are documented by `default_config` in the notebook. Public detector weights can be fetched independently:
 
 ```powershell
 .venv/Scripts/python.exe scripts/run_fog_research.py download-models
@@ -98,7 +98,7 @@ Regenerate reports from completed experiments, including completed models in an 
 
 Each run contains `settings.json`, the exact input manifest, per-model/arm/seed `last.pt` and `best.pt`, `progress.json`, `trained-model.pt`, loss histories, raw predictions/timings, status, `results.csv`, `paired-deltas.csv`, `seed-summary.csv`, `density-quality.csv`, and a `figures/` directory. `last.pt` resumes optimizer/scaler/RNG state; `trained-model.pt` is the compact inference artifact without optimizer state. Press Interrupt Kernel or stop the process, then rerun with the same output directory and settings. The current accumulation window is retried, while completed optimizer updates are preserved. A changed input manifest requires a new output folder; the earlier partial-data run is preserved at `archive/legacy-before-fog/runs/full-training-partial-before-complete-dataset/`. One writer per run is enforced by a file lock.
 
-The active full-study output is `reports/fog/full-training-complete/`. `.cache/` contains the Foggy Cityscapes and DETR caches needed to rerun; `.runtime/`, `.venv/`, and `.ultralytics/` contain the project runtimes/configuration. The `scripts/` directory contains the preparation, training, notebook-generation and verification tools used by the project, not temporary agent files. `reports/fog/verification/` contains small TEST-ONLY regression charts and checks.
+The active full-study output is `reports/fog/full-training-complete/`. `.cache/` contains the Foggy Cityscapes and DETR caches needed to rerun; `.runtime/`, `.venv/`, and `.ultralytics/` contain the project runtimes/configuration. The `scripts/` directory contains the preparation, notebook-driven CLI, publication and verification tools used by the project, not temporary agent files. `reports/fog/verification/` contains small TEST-ONLY regression charts and checks.
 
 Accuracy uses one COCO bbox evaluator: mAP@[.50:.95], AP50, AR100, precision/recall at confidence .25 and IoU .5, and per-class AP. The same seven categories, preprocessing and image sets are used across arms. End-to-end latency includes decoding, resizing, transfer, density estimation, detector/adapter and postprocessing; downloads and training are excluded. Seed standard deviation is not a confidence interval or a significance test.
 
@@ -128,7 +128,7 @@ The 640-pixel CUDA/AMP integration check passed for all six model/arm combinatio
 
 Dataset reuse follows the user-supplied `Untitled2.ipynb` download source. Consult the [Foggy Cityscapes authors](https://people.ee.ethz.ch/~csakarid/SFSU_synthetic/), [YOLO11 documentation](https://docs.ultralytics.com/models/yolo11/), and [official DETR model card](https://huggingface.co/facebook/detr-resnet-50) for source details.
 
-Earlier app, occupancy and depth work remains under [the archive](archive/legacy-before-fog/README.md). Prior fog-pilot notebook versions are also preserved there. Active support code, runtime dependencies and nuScenes data remain in place.
+Earlier app, occupancy and depth work remains under [the archive](archive/legacy-before-fog/README.md). Prior fog-pilot notebook versions are also preserved there. The active notebook, runtime dependencies and nuScenes data remain in place.
 
 ## Notebook readability and checkpoint safety
 

@@ -21,11 +21,12 @@ from PIL import Image
 from torch import nn
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "notebooks/_support"))
-import fog_analytics as analytics  # noqa: E402
-import fog_training as training  # noqa: E402
-from fog_data import cityscapes_manifest  # noqa: E402
-from fog_research import read_manifest  # noqa: E402
+sys.path.insert(0, str(ROOT))
+from scripts.run_fog_research import load_notebook_runtime  # noqa: E402
+
+training = analytics = load_notebook_runtime()
+cityscapes_manifest = training.cityscapes_manifest
+read_manifest = training.read_manifest
 
 
 class FixtureDetector:
@@ -337,7 +338,7 @@ class MatchedFogEvaluation(unittest.TestCase):
                         checkpoint=str(source / "density-42" / "best.pt"),
                         source_run="fixture",
                     )
-                if "PROFILE_SETTINGS = {" in code:
+                if cell.metadata.get("fogStudySettings"):
                     settings = namespace["SETTINGS"]
                     settings.update(
                         action="evaluate", runtime_root=str(self.root / "runtime")
@@ -366,7 +367,10 @@ class MatchedFogEvaluation(unittest.TestCase):
                         output_name="notebook-evaluation",
                         max_pairs=1,
                     )
-                if "resolve_study_configuration(SETTINGS)" in code:
+                if (
+                    "resolve_study_configuration(SETTINGS)" in code
+                    or cell.metadata.get("fogStudySection") == "predictor"
+                ):
                     namespace.update(
                         Detector=FixtureDetector,
                         FogAdapter=FixtureAdapter,
