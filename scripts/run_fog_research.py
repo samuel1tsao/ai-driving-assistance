@@ -31,22 +31,26 @@ def load_notebook_runtime():
 
 
 def load_rows(config):
-    read_manifest = load_notebook_runtime().read_manifest
+    load_and_validate_manifest = load_notebook_runtime().load_and_validate_manifest
     rows = []
     for name in ("manifest", "city_manifest"):
         path = config.get(name)
         if path and Path(path).is_file():
             print(f"Validate {path}", flush=True)
-            rows.extend(read_manifest(path))
+            rows.extend(load_and_validate_manifest(path))
     return rows
 
 
 def main():
     runtime = load_notebook_runtime()
-    default_config, preflight, run_training = (
-        runtime.default_config,
-        runtime.preflight,
-        runtime.run_training,
+    (
+        default_training_configuration,
+        run_training_preflight,
+        run_configured_detector_study,
+    ) = (
+        runtime.default_training_configuration,
+        runtime.run_training_preflight,
+        runtime.run_configured_detector_study,
     )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -71,7 +75,7 @@ def main():
         help="Existing Foggy Cityscapes or Kaggle cache directory",
     )
     args = parser.parse_args()
-    config = default_config(ROOT)
+    config = default_training_configuration(ROOT)
     if args.config:
         config.update(json.loads(args.config.read_text(encoding="utf-8")))
     if args.baseline_only:
@@ -79,21 +83,23 @@ def main():
     if args.output:
         config["output"] = str(args.output.resolve())
     if args.command == "prepare":
-        prepare_nuscenes = runtime.prepare_nuscenes
-        prepare_nuscenes(ROOT / "data/depth/datasets/nuscenes", config["manifest"])
-        cityscapes_manifest, resolve_foggy_images = (
-            runtime.cityscapes_manifest,
+        prepare_nuscenes_manifest = runtime.prepare_nuscenes_manifest
+        prepare_nuscenes_manifest(
+            ROOT / "data/depth/datasets/nuscenes", config["manifest"]
+        )
+        prepare_cityscapes_manifest, resolve_foggy_images = (
+            runtime.prepare_cityscapes_manifest,
             runtime.resolve_foggy_images,
         )
         city = resolve_foggy_images(ROOT, args.fog_root, download=args.download_fog)
         if city is not None and not Path(config["city_manifest"]).exists():
-            cityscapes_manifest(city, config["city_manifest"])
+            prepare_cityscapes_manifest(city, config["city_manifest"])
         return
     if args.command == "download-models":
-        Detector = runtime.Detector
+        ObjectDetector = runtime.ObjectDetector
         for name, checkpoint in config["checkpoints"].items():
             print(f"Load pretrained {name}", flush=True)
-            detector = Detector(name, checkpoint, "cpu")
+            detector = ObjectDetector(name, checkpoint, "cpu")
             print(
                 f"{name}: {sum(p.numel() for p in detector.model.parameters()):,} parameters",
                 flush=True,
@@ -101,17 +107,17 @@ def main():
             del detector
         return
     if args.command == "analyze":
-        export_analytics = runtime.export_analytics
-        results = export_analytics(config["output"])
+        generate_study_analytics = runtime.generate_study_analytics
+        results = generate_study_analytics(config["output"])
         print(results.to_string(index=False))
         return
     rows = load_rows(config)
-    checks = preflight(config, rows)
+    checks = run_training_preflight(config, rows)
     print(checks.to_string(index=False))
     if not checks.ready.all():
         raise SystemExit(2)
     if args.command == "train":
-        run_training(rows, config)
+        run_configured_detector_study(rows, config)
 
 
 if __name__ == "__main__":

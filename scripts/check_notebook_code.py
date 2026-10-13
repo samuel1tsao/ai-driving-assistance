@@ -25,6 +25,9 @@ def main():
         [sys.executable, "-m", "ruff", "format", "--check", str(notebook_path)],
         check=True,
     )
+    shared_source = "\n\n".join(
+        cell.source for cell in notebook.cells if cell.cell_type == "code"
+    )
     subprocess.run(
         [
             sys.executable,
@@ -32,12 +35,18 @@ def main():
             "ruff",
             "check",
             "--ignore",
-            "F811",
-            str(notebook_path),
+            "F811,E402",
+            "--stdin-filename",
+            "fog_density_notebook.py",
+            "-",
         ],
+        input=shared_source,
+        text=True,
         check=True,
     )
-    print("PASS: notebook schema, direct-cell syntax, readability, lint and format.")
+    print(
+        "PASS: notebook schema, cell syntax, shared-namespace lint, readability and format."
+    )
 
 
 if __name__ == "__main__":

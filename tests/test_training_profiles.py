@@ -16,10 +16,10 @@ from scripts.run_fog_research import load_notebook_runtime  # noqa: E402
 notebook = load_notebook_runtime()
 PROFILE_SETTINGS = notebook.PROFILE_SETTINGS
 add_balanced_bin_rows = notebook.add_balanced_bin_rows
-density_bin, epoch_indices, epoch_size = (
-    notebook.density_bin,
-    notebook.epoch_indices,
-    notebook.epoch_size,
+classify_density_bin, select_epoch_sample_indices, count_epoch_samples = (
+    notebook.classify_density_bin,
+    notebook.select_epoch_sample_indices,
+    notebook.count_epoch_samples,
 )
 select_profile_rows = notebook.select_profile_rows
 validate_and_record_run_identity = notebook.validate_and_record_run_identity
@@ -88,15 +88,15 @@ class TrainingProfiles(unittest.TestCase):
             {"beta": 0.01},
             {"beta": 0.02},
         ]
-        first = epoch_indices(rows, 42, 0, balanced=True)
-        second = epoch_indices(rows, 42, 0, balanced=True)
+        first = select_epoch_sample_indices(rows, 42, 0, balanced=True)
+        second = select_epoch_sample_indices(rows, 42, 0, balanced=True)
         self.assertEqual(first, second)
-        labels = [density_bin(rows[index]["beta"]) for index in first]
+        labels = [classify_density_bin(rows[index]["beta"]) for index in first]
         self.assertEqual(
             {label: labels.count(label) for label in set(labels)},
             {"clear": 2, "light": 2, "moderate": 2, "dense": 2},
         )
-        self.assertEqual(epoch_size(rows, balanced=True), 8)
+        self.assertEqual(count_epoch_samples(rows, balanced=True), 8)
 
     def test_balanced_analysis_rows_do_not_pool_datasets(self):
         rows = pd.DataFrame(

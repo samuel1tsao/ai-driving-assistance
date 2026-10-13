@@ -88,20 +88,24 @@ class ProfileContinuation(unittest.TestCase):
         self.assertEqual(workflow.SETTINGS["profile"]["density_sampling"], "natural")
         with (
             patch.object(
-                workflow, "prepare_subset", side_effect=AssertionError("no extraction")
+                workflow,
+                "prepare_profile_dataset_subset",
+                side_effect=AssertionError("no extraction"),
             ),
             patch.object(
                 workflow,
-                "read_manifest",
+                "load_and_validate_manifest",
                 side_effect=AssertionError("no image loading"),
             ),
             patch.object(
                 workflow,
-                "preflight",
+                "run_training_preflight",
                 side_effect=AssertionError("no training preflight"),
             ),
             patch.object(
-                workflow, "run_training", side_effect=AssertionError("no training")
+                workflow,
+                "run_configured_detector_study",
+                side_effect=AssertionError("no training"),
             ),
             patch.object(
                 workflow,
@@ -133,7 +137,9 @@ class ProfileContinuation(unittest.TestCase):
         self.assertEqual(configuration, recorded)
         self.assertFalse(workflow.should_reuse_completed_training(configuration))
         with patch.object(
-            workflow, "run_training", return_value=(pd.DataFrame(), None)
+            workflow,
+            "run_configured_detector_study",
+            return_value=(pd.DataFrame(), None),
         ) as train:
             workflow.train_or_analyze_configured_study(
                 "train", configuration, [], pd.DataFrame([{"ready": True}])
@@ -146,7 +152,9 @@ class ProfileContinuation(unittest.TestCase):
         )
         with (
             patch.object(
-                workflow, "run_training", side_effect=AssertionError("no training")
+                workflow,
+                "run_configured_detector_study",
+                side_effect=AssertionError("no training"),
             ),
             patch.object(
                 workflow,
@@ -251,7 +259,7 @@ class FrozenPredictorSetup(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def save_predictor(self, path, bias=0.0):
-        model = workflow.DensityCNN()
+        model = workflow.FogDensityRegressor()
         with torch.no_grad():
             model.features[-1].weight.zero_()
             model.features[-1].bias.fill_(bias)

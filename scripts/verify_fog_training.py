@@ -25,13 +25,21 @@ def main():
     import torch
 
     notebook = load_notebook_runtime()
-    default_config, run_training, preflight, partitions = (
-        notebook.default_config,
-        notebook.run_training,
-        notebook.preflight,
-        notebook.partitions,
+    (
+        default_training_configuration,
+        run_configured_detector_study,
+        run_training_preflight,
+        create_training_data_partitions,
+    ) = (
+        notebook.default_training_configuration,
+        notebook.run_configured_detector_study,
+        notebook.run_training_preflight,
+        notebook.create_training_data_partitions,
     )
-    Detector, read_manifest = notebook.Detector, notebook.read_manifest
+    ObjectDetector, load_and_validate_manifest = (
+        notebook.ObjectDetector,
+        notebook.load_and_validate_manifest,
+    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--size", type=int, default=128)
     parser.add_argument("--amp", action="store_true")
@@ -83,8 +91,8 @@ def main():
             ),
             encoding="utf-8",
         )
-        rows = read_manifest(manifest)
-        config = default_config(ROOT)
+        rows = load_and_validate_manifest(manifest)
+        config = default_training_configuration(ROOT)
         config.update(
             output=str(folder / "run"),
             manifest=str(manifest),
@@ -97,15 +105,15 @@ def main():
             save_every=1,
             amp=args.amp,
         )
-        assert preflight(config, rows).ready.all()
-        assert len(partitions(rows)["detector_train"]) == 2
+        assert run_training_preflight(config, rows).ready.all()
+        assert len(create_training_data_partitions(rows)["detector_train"]) == 2
         assert (
-            len(partitions(rows)["test"]) == 1
+            len(create_training_data_partitions(rows)["test"]) == 1
         )  # unlabeled density row cannot become a negative detection image
-        results, status = run_training(rows, config)
+        results, status = run_configured_detector_study(rows, config)
         assert len(status) == 6 and (status.status == "complete").all()
         for name in config["checkpoints"]:
-            model = Detector(name, config["checkpoints"][name], "cpu")
+            model = ObjectDetector(name, config["checkpoints"][name], "cpu")
             original = model.model.state_dict()
             for arm in config["arms"]:
                 directory = folder / "run" / f"{name}-{arm}-7"
@@ -130,14 +138,14 @@ def main():
         mtimes = {
             p: str(p.stat().st_mtime_ns) for p in (folder / "run").glob("*/last.pt")
         }
-        run_training(rows, config)
+        run_configured_detector_study(rows, config)
         assert all(str(p.stat().st_mtime_ns) == old for p, old in mtimes.items()), (
             "Completed resume retrained a model"
         )
         altered = copy.deepcopy(config)
         altered["epochs"] = 2
         try:
-            run_training(rows, altered)
+            run_configured_detector_study(rows, altered)
         except ValueError as error:
             assert "changed" in str(error)
         else:

@@ -23,10 +23,10 @@ class SmallDetector:
     def __init__(self):
         self.model = nn.Sequential(nn.Linear(1, 1), nn.Dropout(0.2))
 
-    def training_mode(self):
+    def set_training_mode(self):
         self.model.train()
 
-    def loss(self, image, annotation):
+    def training_loss(self, image, annotation):
         expected = image.new_tensor([[annotation["target"]]])
         return torch.nn.functional.mse_loss(self.model(image), expected)
 
@@ -53,7 +53,7 @@ class CheckpointRegressions(unittest.TestCase):
             {"id": str(index), "value": index / 10 + 0.1, "target": index / 20}
             for index in range(5)
         ]
-        self.partitions = {
+        self.create_training_data_partitions = {
             "detector_train": self.training_rows,
             "val": self.training_rows[:2],
         }
@@ -69,7 +69,9 @@ class CheckpointRegressions(unittest.TestCase):
         }
         self.addCleanup(patch.stopall)
         patch.object(self.training, "tqdm", lambda values, **kwargs: values).start()
-        patch.object(self.training, "beta_for", lambda *args: torch.zeros(1, 1)).start()
+        patch.object(
+            self.training, "get_density_feature", lambda *args: torch.zeros(1, 1)
+        ).start()
 
     def make_models(self):
         torch.manual_seed(42)
@@ -87,12 +89,12 @@ class CheckpointRegressions(unittest.TestCase):
                 raise KeyboardInterrupt("Simulated runtime interruption")
             return torch.tensor([[annotation["value"]]])
 
-        with patch.object(self.training, "image_tensor", load_test_image):
-            self.training.fit_detector(
+        with patch.object(self.training, "load_image_tensor", load_test_image):
+            self.training.fit_object_detector(
                 detector,
                 adapter,
                 None,
-                self.partitions,
+                self.create_training_data_partitions,
                 "rgb_control",
                 self.configuration,
                 directory,
@@ -246,7 +248,7 @@ class CheckpointRegressions(unittest.TestCase):
             "predict_one_image_with_timing",
             side_effect=AssertionError("Must reuse prediction"),
         ):
-            result = self.training.evaluate_resumable(
+            result = self.training.evaluate_predictions_with_resume(
                 SmallDetector(),
                 None,
                 None,
@@ -285,7 +287,7 @@ class CheckpointRegressions(unittest.TestCase):
             def forward(self, image):
                 return self.layer(image)
 
-        partitions = {
+        create_training_data_partitions = {
             "density_train": [
                 {
                     **row,
@@ -301,14 +303,18 @@ class CheckpointRegressions(unittest.TestCase):
 
         def train_density(directory):
             with (
-                patch.object(self.training, "DensityCNN", SmallDensityEstimator),
+                patch.object(
+                    self.training, "FogDensityRegressor", SmallDensityEstimator
+                ),
                 patch.object(
                     self.training,
-                    "image_tensor",
+                    "load_image_tensor",
                     lambda row, *args: torch.tensor([[row["value"]]]),
                 ),
             ):
-                self.training.fit_density(partitions, configuration, directory, 42)
+                self.training.fit_fog_density_model(
+                    create_training_data_partitions, configuration, directory, 42
+                )
             return torch.load(directory / "last.pt", weights_only=True)
 
         expected = train_density(
@@ -337,7 +343,9 @@ class CheckpointRegressions(unittest.TestCase):
         with (
             FileLock(str(output / "run.lock")),
             patch.object(
-                self.training, "preflight", return_value=pd.DataFrame({"ready": [True]})
+                self.training,
+                "run_training_preflight",
+                return_value=pd.DataFrame({"ready": [True]}),
             ),
             patch.object(
                 self.training,
@@ -346,7 +354,7 @@ class CheckpointRegressions(unittest.TestCase):
             ),
         ):
             with self.assertRaises(Timeout):
-                self.training.run_training(
+                self.training.run_configured_detector_study(
                     [], {**self.configuration, "output": str(output)}
                 )
 

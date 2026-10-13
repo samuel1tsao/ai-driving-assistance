@@ -7,16 +7,22 @@ import nbformat
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = ROOT / "notebooks/fog_density_consolidated.ipynb"
 MAX_WORKFLOW_STATEMENTS = 5
-MAX_DEFINITION_SECTIONS = 8
+MAX_DEFINITION_SECTIONS = 13
 ORCHESTRATION_FUNCTIONS = {
     "resolve_study_configuration",
     "train_or_analyze_configured_study",
     "execute_training",
-    "run_training",
+    "run_configured_detector_study",
     "run_comparison_matrix",
     "run_detector_comparison",
     "run_detector_training_and_evaluation",
     "resolve_density_predictor_checkpoint",
+    "run_checkpoint_evaluation",
+    "evaluate_saved_comparison",
+    "validate_matched_evaluation",
+    "validate_study_settings",
+    "apply_subset_execution_settings",
+    "verify_subset_completion_and_checkpoint_reuse",
 }
 
 

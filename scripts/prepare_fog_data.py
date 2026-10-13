@@ -16,5 +16,5 @@ if __name__ == "__main__":
         "--output", type=Path, default=ROOT / "data/fog/nuscenes_all.json"
     )
     args = parser.parse_args()
-    prepare_nuscenes = load_notebook_runtime().prepare_nuscenes
-    prepare_nuscenes(args.root, args.output)
+    prepare_nuscenes_manifest = load_notebook_runtime().prepare_nuscenes_manifest
+    prepare_nuscenes_manifest(args.root, args.output)

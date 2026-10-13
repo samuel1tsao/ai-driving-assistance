@@ -25,8 +25,8 @@ sys.path.insert(0, str(ROOT))
 from scripts.run_fog_research import load_notebook_runtime  # noqa: E402
 
 training = analytics = load_notebook_runtime()
-cityscapes_manifest = training.cityscapes_manifest
-read_manifest = training.read_manifest
+prepare_cityscapes_manifest = training.prepare_cityscapes_manifest
+load_and_validate_manifest = training.load_and_validate_manifest
 
 
 class FixtureDetector:
@@ -36,7 +36,7 @@ class FixtureDetector:
         self.name = name
         self.model = nn.Linear(1, 1)
 
-    def predict(self, image, row):
+    def predict_objects(self, image, row):
         FixtureDetector.calls += 1
         return [
             {"box": box, "label": label, "score": 0.9}
@@ -89,8 +89,8 @@ class MatchedFogEvaluation(unittest.TestCase):
             Image.fromarray(mask).save(
                 self.root / "gtFine/val/frankfurt" / f"{base}_gtFine_instanceIds.png"
             )
-        self.rows = read_manifest(
-            cityscapes_manifest(
+        self.rows = load_and_validate_manifest(
+            prepare_cityscapes_manifest(
                 self.root, self.root / "city.json", with_detection_labels=True
             )
         )
@@ -98,7 +98,7 @@ class MatchedFogEvaluation(unittest.TestCase):
     def source_run(self):
         source = self.root / "training"
         source.mkdir()
-        config = training.default_config(self.root)
+        config = training.default_training_configuration(self.root)
         config.update(
             output=str(self.root / "evaluation"),
             evaluation_source=str(source),
@@ -160,7 +160,7 @@ class MatchedFogEvaluation(unittest.TestCase):
         clear = next((self.root / "leftImg8bit").rglob("*.png"))
         clear.unlink()
         with self.assertRaisesRegex(FileNotFoundError, "clear"):
-            cityscapes_manifest(self.root, self.root / "bad.json", True)
+            prepare_cityscapes_manifest(self.root, self.root / "bad.json", True)
         self.assertFalse((self.root / "bad.json").exists())
 
     def test_effect_direction_and_one_seed_has_no_interval(self):
@@ -197,14 +197,18 @@ class MatchedFogEvaluation(unittest.TestCase):
             for path in source.rglob("*.pt")
         }
         with (
-            patch.object(training, "Detector", FixtureDetector),
+            patch.object(training, "ObjectDetector", FixtureDetector),
             patch.object(training, "FogAdapter", FixtureAdapter),
-            patch.object(training, "DensityCNN", FixtureDensity),
+            patch.object(training, "FogDensityRegressor", FixtureDensity),
             patch.object(
-                training, "fit_detector", side_effect=AssertionError("must not train")
+                training,
+                "fit_object_detector",
+                side_effect=AssertionError("must not train"),
             ),
             patch.object(
-                training, "fit_density", side_effect=AssertionError("must not train")
+                training,
+                "fit_fog_density_model",
+                side_effect=AssertionError("must not train"),
             ),
         ):
             results, status = training.run_checkpoint_evaluation(self.rows, config)
@@ -258,7 +262,7 @@ class MatchedFogEvaluation(unittest.TestCase):
         audit.write_text('{"current": true}')
         old = output / "old.pt"
         old.write_bytes(b"old checkpoint")
-        config = training.default_config(self.root)
+        config = training.default_training_configuration(self.root)
         config.update(
             output=str(output),
             profile_name="setup",
@@ -269,7 +273,9 @@ class MatchedFogEvaluation(unittest.TestCase):
         )
         with (
             patch.object(
-                training, "preflight", return_value=pd.DataFrame([{"ready": True}])
+                training,
+                "run_training_preflight",
+                return_value=pd.DataFrame([{"ready": True}]),
             ),
             patch.object(training, "validate_and_record_run_identity"),
             patch.object(
@@ -278,19 +284,21 @@ class MatchedFogEvaluation(unittest.TestCase):
             patch.object(
                 training, "run_detector_comparison", return_value={"status": "complete"}
             ),
-            patch.object(analytics, "export_analytics", return_value=pd.DataFrame()),
+            patch.object(
+                analytics, "generate_study_analytics", return_value=pd.DataFrame()
+            ),
         ):
             with FileLock(str(output / "run.lock"), timeout=0):
                 with self.assertRaises(Timeout):
-                    training.run_training([], config)
+                    training.run_configured_detector_study([], config)
             self.assertEqual(old.read_bytes(), b"old checkpoint")
-            training.run_training([], config)
+            training.run_configured_detector_study([], config)
             self.assertFalse(old.exists())
             self.assertEqual(audit.read_text(), '{"current": true}')
 
     def test_interrupted_evaluation_recovers_prediction_prefix(self):
         source, config = self.source_run()
-        original_predict = FixtureDetector.predict
+        original_predict = FixtureDetector.predict_objects
         calls = []
 
         def interrupt_after_first_record(detector, image, row):
@@ -300,11 +308,13 @@ class MatchedFogEvaluation(unittest.TestCase):
             return original_predict(detector, image, row)
 
         with (
-            patch.object(training, "Detector", FixtureDetector),
+            patch.object(training, "ObjectDetector", FixtureDetector),
             patch.object(training, "FogAdapter", FixtureAdapter),
-            patch.object(training, "DensityCNN", FixtureDensity),
+            patch.object(training, "FogDensityRegressor", FixtureDensity),
         ):
-            with patch.object(FixtureDetector, "predict", interrupt_after_first_record):
+            with patch.object(
+                FixtureDetector, "predict_objects", interrupt_after_first_record
+            ):
                 with self.assertRaises(KeyboardInterrupt):
                     training.run_checkpoint_evaluation(self.rows, config)
             prediction_path = next(Path(config["output"]).glob("*/*-predictions.jsonl"))
@@ -372,9 +382,9 @@ class MatchedFogEvaluation(unittest.TestCase):
                     or cell.metadata.get("fogStudySection") == "predictor"
                 ):
                     namespace.update(
-                        Detector=FixtureDetector,
+                        ObjectDetector=FixtureDetector,
                         FogAdapter=FixtureAdapter,
-                        DensityCNN=FixtureDensity,
+                        FogDensityRegressor=FixtureDensity,
                     )
             self.assertEqual(len(namespace["status"]), 6)
             self.assertTrue(Path(namespace["archive_path"]).is_file())

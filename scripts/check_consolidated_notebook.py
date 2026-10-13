@@ -114,7 +114,7 @@ def main():
                         "kind": "fog-density-v1",
                         "beta_scale": shell.user_ns["BETA_SCALE"],
                         "train_groups": [["nuscenes", "fixture-held-out"]],
-                        "model": shell.user_ns["DensityCNN"]().state_dict(),
+                        "model": shell.user_ns["FogDensityRegressor"]().state_dict(),
                     },
                     fixture_checkpoint,
                 )

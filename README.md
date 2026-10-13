@@ -74,7 +74,7 @@ Run preparation and confirm complete coverage before training:
 .venv/Scripts/python.exe scripts/run_fog_research.py train
 ```
 
-These commands resume automatically when repeated. JSON overrides are supported with `--config path.json`; valid fields are documented by `default_config` in the notebook. Public detector weights can be fetched independently:
+These commands resume automatically when repeated. JSON overrides are supported with `--config path.json`; valid fields are documented by `default_training_configuration` in the notebook. Public detector weights can be fetched independently:
 
 ```powershell
 .venv/Scripts/python.exe scripts/run_fog_research.py download-models
