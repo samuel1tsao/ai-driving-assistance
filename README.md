@@ -10,9 +10,9 @@ See the [proposed setup, partial and full training profiles](docs/training-run-p
 
 For profile configuration, checkpoint continuation and validation notes, see [the consolidated notebook guide](docs/fog-density-consolidated-notebook.md). Partial profiles use fixed tuning rows for preliminary analysis; the full profile continues the existing full run and evaluates the final held-out set.
 
-Shared names/defaults and `PROFILE_SETTINGS` live in the first code cell. Choose the run in **Run settings**; set `SETTINGS["data"]["location"]` relative to MyDrive or to an absolute local path, and choose `SETTINGS["data"]["mode"]="zip"` or `"directory"`. See [configuration examples](docs/colab-guide.md#configuration).
+Shared names/defaults and `PROFILE_SETTINGS` live in the first code cell. Choose the run in **Run settings** and set `SETTINGS["data"]["location"]` to the Drive folder or local folder containing the configured dataset ZIP. Every profile prepares the same full dataset; profile caps are applied when training partitions are made. See [configuration](docs/colab-guide.md#configuration).
 
-Upload [the standalone Colab notebook](notebooks/fog_density_colab.ipynb) and select a GPU runtime. Low-disk mode keeps the complete dataset ZIP and checkpoints in Drive, blocks extra dataset downloads, and requires about 64.25 GiB free before extraction (49.25 GiB data plus 15 GiB working space). It embeds the code, installs dependencies without a pip download cache, and downloads model weights when needed. Follow the [Colab guide](docs/colab-guide.md). The optional code bundle is `dist/fog-colab-code.zip`.
+Upload [the standalone Colab notebook](notebooks/fog_density_colab.ipynb) and select a GPU runtime. Keep the complete dataset ZIP in Drive; the notebook extracts the same data for every profile and requires about 64.25 GiB free (49.25 GiB data plus 15 GiB working space). It embeds the code, installs dependencies without a pip download cache, and downloads model weights when needed. Follow the [Colab guide](docs/colab-guide.md). The optional code bundle is `dist/fog-colab-code.zip`.
 
 ## What was fixed
 

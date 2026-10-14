@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -88,7 +89,11 @@ class ProfileContinuation(unittest.TestCase):
         self.assertEqual(workflow.SETTINGS["profile"]["density_sampling"], "natural")
         rows = [{"id": "loaded"}]
         with (
-            patch.object(workflow, "prepare_profile_dataset_subset") as prepare,
+            patch.object(
+                workflow, "find_or_download_dataset_archive", return_value=paths["archive"]
+            ) as archive,
+            patch.object(workflow, "validate_and_extract_full_dataset_archive") as extract,
+            patch.object(workflow, "verify_prepared_manifest_files") as verify,
             patch.object(
                 workflow, "load_and_validate_dataset_annotations", return_value=rows
             ),
@@ -113,7 +118,9 @@ class ProfileContinuation(unittest.TestCase):
             results, status = workflow.train_detector_profile(
                 configuration, annotations, checks
             )
-        prepare.assert_called_once()
+        archive.assert_called_once()
+        extract.assert_called_once_with(paths["archive"])
+        verify.assert_called_once()
         runner.assert_called_once_with(rows, recorded)
         self.assertFalse(results.empty)
         self.assertEqual(status.iloc[0]["status"], "complete")
@@ -121,6 +128,40 @@ class ProfileContinuation(unittest.TestCase):
         self.assertEqual(
             json.loads((output / "settings.json").read_text())["config"], recorded
         )
+
+    def test_data_preparation_uses_same_steps_for_every_profile(self):
+        workflow.resolve_study_configuration(copy.deepcopy(self.settings))
+        with (
+            patch.object(
+                workflow,
+                "find_or_download_dataset_archive",
+                return_value=Path("dataset.zip"),
+            ) as archive,
+            patch.object(workflow, "validate_and_extract_full_dataset_archive") as extract,
+            patch.object(workflow, "verify_prepared_manifest_files") as verify,
+        ):
+            for profile in workflow.PROFILE_NAMES:
+                workflow.SETTINGS["profile"]["name"] = profile
+                workflow.prepare_fog_data()
+        self.assertEqual(archive.call_count, len(workflow.PROFILE_NAMES))
+        self.assertEqual(extract.call_count, len(workflow.PROFILE_NAMES))
+        self.assertEqual(verify.call_count, len(workflow.PROFILE_NAMES))
+
+    def test_dataset_archive_uses_the_configured_url_without_scheme_branches(self):
+        archive = self.folder / "fog-colab-data.zip"
+        downloader = types.ModuleType("gdown")
+
+        def download(url, output, quiet, fuzzy):
+            Path(output).write_bytes(b"dataset")
+            return output
+
+        downloader.download = download
+        workflow.SETTINGS = {"data": {"url": "https://example.test/data.zip"}}
+        workflow.RESOLVED_PATHS = {"archive": archive}
+        with patch.dict("sys.modules", {"gdown": downloader}):
+            result = workflow.find_or_download_dataset_archive()
+        self.assertEqual(result, archive)
+        self.assertEqual(archive.read_bytes(), b"dataset")
 
     def test_unfinished_run_resumes_saved_sampling_and_budget(self):
         recorded, _ = self.existing_run(False)

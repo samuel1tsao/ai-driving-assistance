@@ -22,6 +22,7 @@ classify_density_bin, select_epoch_sample_indices, count_epoch_samples = (
     notebook.count_epoch_samples,
 )
 select_profile_rows = notebook.select_profile_rows
+create_training_data_partitions = notebook.create_training_data_partitions
 validate_and_record_run_identity = notebook.validate_and_record_run_identity
 
 
@@ -150,6 +151,58 @@ class TrainingProfiles(unittest.TestCase):
         first_ids = [row["id"] for row in first if row["split"] == "val"]
         second_ids = [row["id"] for row in second if row["split"] == "val"]
         self.assertEqual(first_ids, second_ids)
+
+    def test_profiles_slice_full_rows_only_when_training_partitions_are_made(self):
+        rows = []
+        for group in range(6):
+            rows.extend(
+                annotation(f"train-{group}-{frame}", "detector_train", f"scene-{group}")
+                for frame in range(2)
+            )
+            rows.append(
+                annotation(
+                    f"density-{group}", "density_train", f"fog-{group}", "foggy_cityscapes"
+                )
+            )
+        rows.extend(
+            annotation(f"val-{group}-{frame}", "val", f"tuning-{group}")
+            for group in range(4)
+            for frame in range(2)
+        )
+        rows.append(annotation("test-0", "test", "held-out"))
+        for row in rows:
+            if row["split"] == "density_train":
+                row["beta"] = 0.005
+
+        configuration = {
+            "profile_name": "partial-2k",
+            "profile_scope": {
+                "name": "partial-2k",
+                "seed": 42,
+                "training_image_cap": 4,
+                "density_image_cap": None,
+                "tuning_image_cap": 2,
+            },
+            "evaluation_split": "val",
+        }
+        partitions = create_training_data_partitions(rows, configuration)
+        self.assertEqual(len(partitions["detector_train"]), 4)
+        self.assertEqual(len(partitions["density_train"]), 6)
+        self.assertEqual(len(partitions["val"]), 2)
+        self.assertEqual(partitions["test"], [])
+
+        full = create_training_data_partitions(
+            rows,
+            {
+                "profile_name": "full",
+                "profile_scope": {"name": "full", "seed": 42},
+                "evaluation_split": "test",
+            },
+        )
+        self.assertEqual(len(full["detector_train"]), 12)
+        self.assertEqual(len(full["density_train"]), 6)
+        self.assertEqual(len(full["val"]), 8)
+        self.assertEqual(len(full["test"]), 1)
 
     def test_changed_profile_identity_is_rejected(self):
         with tempfile.TemporaryDirectory(dir=PROJECT_ROOT / ".runtime") as temporary:

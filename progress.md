@@ -133,6 +133,17 @@ The operational retrain flag is not added to checkpoint fingerprints. On retrain
 
 Saved Drive evidence: `partial-2k-v1/settings.json` (ID `1fhubuYtYGNzREynxIO_5Ver6j00cAR98`) omitted density_sampling, which means natural sampling; all six rows of `status.csv` were complete, including early stops. The latest main notebook had action=train, not analyze, and its traceback entered execute_training. Existing 2k/5k/full run files were read only. The main notebook's latest partial-2k selection and 5k v2 setting were preserved. Its outputs were backed up as `fog_density_study_before_continuation_fix_20261011.ipynb` (ID `1oms11pbIVz8hB95AwEEd3hlS0uPbbGhb`) before replacing the main notebook.
 
+## Simplify dataset preparation across profiles
+
+User direction: prepare the same full dataset for every profile, apply profile caps only when making training partitions, assume the archive URL is a configured HTTPS constant, remove unnecessary validation/fallback branches, and preserve Colab A100 input-throughput settings.
+
+| Status | Work item | Acceptance / verification |
+|---|---|---|
+| DONE | Make data preparation profile-independent and remove reduced-copy staging helpers | All profiles prepare the same configured archive/manifests. Profile caps are applied only inside training partition creation. |
+| DONE | Simplify the archive URL and storage configuration | One HTTPS URL at the settings level; no runtime scheme check or URL-specific cache branches. |
+| DONE | Preserve detector throughput settings and checkpoint compatibility | Existing full-run identity and A100 benchmark/loader settings stay unchanged; partial profile versions advance for new selected-row behavior. |
+| DONE | Verify selection, preparation, resume, and Colab notebook | 44 unit tests pass; notebook syntax/lint/format/readability and exact Colab mirror pass; focused fog checks pass; bounded directory workflow completes training, validation, reports, and checkpoint export. ZIP extraction is covered by selection/preparation tests; a full 49 GiB ZIP smoke was not repeated. |
+
 ## Notebook readability enforcement
 
 Goal: keep the single authored Colab notebook understandable from its visible workflow while preserving its self-contained runtime implementation and checkpoint behavior.

@@ -255,7 +255,7 @@ class MatchedFogEvaluation(unittest.TestCase):
                 self.rows, dict(config, output=str(source))
             )
 
-    def test_setup_cleanup_obeys_lock_and_preserves_current_input_audit(self):
+    def test_setup_cleanup_obeys_lock_and_removes_stale_subset_audit(self):
         output = self.root / "setup-check-1"
         output.mkdir()
         audit = output / "subset-selection.json"
@@ -294,7 +294,7 @@ class MatchedFogEvaluation(unittest.TestCase):
             self.assertEqual(old.read_bytes(), b"old checkpoint")
             training.run_configured_detector_study([], config)
             self.assertFalse(old.exists())
-            self.assertEqual(audit.read_text(), '{"current": true}')
+            self.assertFalse(audit.exists())
 
     def test_interrupted_evaluation_recovers_prediction_prefix(self):
         source, config = self.source_run()

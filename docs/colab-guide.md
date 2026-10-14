@@ -4,28 +4,20 @@ Open the [current Drive notebook](https://colab.research.google.com/drive/1kyRGj
 
 ## Configuration
 
-Shared constants and `PROFILE_SETTINGS` are near the top. Change a profile's version there for a new experiment. Setup always uses its disposable fixed folder. **Run settings** chooses the environment, profile, action, data/output paths, evaluation source, and pretrained density checkpoint.
+Shared constants and `PROFILE_SETTINGS` are near the top. Change a profile's version there for a new experiment. Setup always uses its disposable fixed folder. **Run settings** chooses the environment, profile, data/output paths, evaluation source, and density checkpoint.
 
 For Drive storage, use locations relative to MyDrive:
 
 ```python
-SETTINGS["data"]["location"] = {"kind": "drive", "path": "Research/Fog study"}
+SETTINGS["data"]["location"] = {"kind": "drive", "path": "fog-study"}
 SETTINGS["output"]["location"] = {"kind": "drive", "path": "Research/Fog results"}
-SETTINGS["data"]["mode"] = "zip"
 ```
 
-This reads the configured data archive from `MyDrive/Research/Fog study/` and writes runs under `MyDrive/Research/Fog results/`. For a prepared directory, use `mode="directory"` and point at the folder containing `data/` and the referenced images. An absolute local path uses `kind="path"`. A partial profile stages its scene-safe subset locally from either source.
+This reads `fog-colab-data.zip` from `MyDrive/fog-study/` and writes runs under `MyDrive/Research/Fog results/`. The archive download URL is defined once as `DATA_ARCHIVE_URL`; the notebook uses the Drive copy when it is already present. A local archive can use `kind="path"` with its containing folder.
 
-Connect Drive, install dependencies, run the collapsed definitions, and resolve the configuration. The visible **Load the fog-density model** cell actually restores the checkpoint, switches it to evaluation mode, freezes its parameters, and prints the loaded path and state. `get_fog_density(images)` uses that predictor. New partial profiles default to the completed full-run estimator; set `density_predictor.checkpoint` if it moved. Full keeps its existing per-seed continuation.
+All profiles run the same data preparation: load the dataset ZIP, extract its prepared images and manifests, then load the annotations. Training applies the selected profile's image caps when it creates training partitions. No profile gets a separate copied dataset. Connect Drive, install dependencies, run the collapsed definitions, and resolve the configuration. The density step loads the saved predictor or trains and saves it if it is missing. `get_fog_density(images)` uses the loaded predictor.
 
-## Continue, reuse, analyze, or retrain
-
-- `action="train", retrain=False`: resume unfinished comparisons with their recorded training settings, or reuse completed/early-stopped results. Setup overwrites its fixed output.
-- `action="preflight"`: display readiness checks.
-- `action="analyze"`: read saved CSVs and redraw graphs; no training, inference, or predictor loading.
-- `action="evaluate"`: evaluate saved detector weights on matched labeled clear/fog images in a separate output.
-
-`retrain=True` with `train` starts fresh detectors in a sibling folder and preserves the old run. The pretrained density predictor remains the input predictor. To resume that new run later, set `output.run_name` to the printed folder and turn retrain off. After changing settings, rerun configuration and the following workflow cells, or restart and Run all.
+Rerunning the training cells resumes unfinished comparisons or reuses completed results. `retrain=True` starts fresh detectors in a sibling folder and preserves the old run. Setup overwrites its fixed output. The independent matched analysis cell reads saved detector checkpoints and displays the fog/clear comparison. After changing settings, rerun configuration and the following workflow cells, or restart and Run all.
 
 Each partial profile starts independently; partial-5k does not continue partial-2k weights. All three models run both comparison arms. The full profile keeps its recorded 30-epoch, multi-seed experiment. Training retains its existing batch/gradient-accumulation contract; the optional synthetic batch-64 benchmark is a separate throughput check.
 
@@ -52,7 +44,7 @@ For a visual record, save a notebook copy with outputs after running. CSVs and P
 
 ## Data bundle and publication
 
-The existing `fog-colab-data.zip` contains prepared nuScenes images/labels and density-only Foggy Cityscapes rows. The prepared bundle measures about 49.25 GiB extracted. Full ZIP extraction with the 15 GiB working reserve requires about 64.25 GiB free; partial profiles stage fewer images. Low-disk mode requires a mounted Drive archive and blocks extra dataset downloads. Code-only changes do not require rebuilding the data archive.
+The existing `fog-colab-data.zip` contains prepared nuScenes images/labels and density-only Foggy Cityscapes rows. It measures about 49.25 GiB extracted. Full extraction with the 15 GiB working reserve requires about 64.25 GiB free. Every profile uses the same extracted data; 2k and 5k limits affect only the rows used for training. Code-only changes do not require rebuilding the data archive.
 
 Build data only when it changes:
 
