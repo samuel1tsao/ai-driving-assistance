@@ -1,6 +1,6 @@
 # Fog-density study notebook
 
-Open the [current Google Colab notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC). The source is `notebooks/fog_density_consolidated.ipynb`; `fog_density_colab.ipynb` is an exact publication copy. All study implementation lives in the notebook. There are no support Python modules or runtime file-writing cells.
+Open the [current Google Colab notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC). The one local source is `notebooks/fog_density_study.ipynb`; upload that same file to Colab. All study implementation lives in the notebook. There are no duplicate notebook copies, support Python modules, or runtime file-writing cells.
 
 ## Reading and configuring the notebook
 
@@ -12,7 +12,7 @@ The visible workflow is:
 
 1. Load and prepare the same full dataset for every profile.
 2. Validate the annotations.
-3. Load the saved fog-density model, or train and save it if it is missing.
+3. Load the saved, frozen fog-density model; if no checkpoint exists, train it once on the full density-training split, save its best checkpoint, then keep it frozen. Partial-profile limits apply only to detector rows.
 4. Apply profile row limits inside the training partitions, then train or resume the detector comparisons.
 5. Run the independent matched clear/fog analysis and review its tables and graphs.
 6. Export checkpoints and reports.
@@ -47,4 +47,4 @@ Run `python -m unittest discover -s tests -v`, `scripts/check_notebook_code.py`,
 
 Run the directory and ZIP variants of `scripts/check_consolidated_notebook.py --images 2` after changing data or orchestration. Its tiny synthetic predictor is only an integration fixture, not a research result. CPU checks do not prove Colab CUDA, Drive mount, or runtime-termination behavior.
 
-Run `scripts/create_colab_notebook.py` to publish the exact notebook mirror. Preserve the current Drive notebook, including any outputs, before replacing its contents. See the [coding standard](coding-standards.md) and [progress record](../progress.md).
+Run `scripts/package_colab_notebook.py` to refresh the optional code bundle. It packages the same single notebook used locally and in Drive; it does not create a second notebook copy. Preserve the current Drive notebook, including any outputs, before replacing its contents. See the [coding standard](coding-standards.md) and [progress record](../progress.md).

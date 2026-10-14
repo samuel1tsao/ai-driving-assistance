@@ -13,7 +13,7 @@ The Git repository contains the active notebooks, support code, scripts, tests, 
 
 ## Run the notebook
 
-Open `notebooks/fog_density_consolidated.ipynb` in Colab, or use the [current fog density study notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC). Edit the configuration cell. Use `TRAINING_PROFILE="setup"` for an all-model smoke run before expensive training, then choose `partial-2k`, `partial-5k`, or `full`.
+Open `notebooks/fog_density_study.ipynb` in Colab, or use the [current fog density study notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC). Edit the configuration cell. Use `TRAINING_PROFILE="setup"` for an all-model smoke run before expensive training, then choose `partial-2k`, `partial-5k`, or `full`.
 
 To resume the existing Drive study, keep the same data, training settings, `output.location`, and `output.run_name`. The configured output directory is `MyDrive/fog-study/runs/colab-full-study`. Mount the same Google Drive account. Use only one training session per output directory.
 

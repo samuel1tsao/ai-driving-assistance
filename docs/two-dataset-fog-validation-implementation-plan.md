@@ -30,7 +30,7 @@ Every table/figure needs a plain-language title, labels, a â€œhow to read thisâ€
 
 ## Single-notebook flow and readability
 
-Make `notebooks/fog_density_consolidated.ipynb` the only authored implementation. Preserve its config, profiles, checkpoints, resume, and preflight. Organize visible cells into short sections: choose profile, audit data, reuse checkpoints, evaluate clear/fog, render analytics, and interpret results. Keep helpers labeled; do not add user-facing modules or duplicate config. Regenerate `notebooks/fog_density_colab.ipynb` and the Drive copy; Git tracks both notebooks and this plan.
+Keep one authored notebook at `notebooks/fog_density_study.ipynb` for local Jupyter and Colab. Preserve its config, profiles, checkpoints, resume, and preflight. Organize visible cells into short sections: choose profile, audit data, reuse checkpoints, evaluate clear/fog, render analytics, and interpret results. Keep helpers labeled; do not add user-facing modules or duplicate config. Upload this same file to Drive; Git tracks the one notebook and this plan.
 
 ## Tests and rollout
 

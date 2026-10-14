@@ -19,7 +19,7 @@ os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 @lru_cache(maxsize=1)
 def load_notebook_runtime():
     """Execute the notebook's definition cells, without running the study workflow."""
-    path = ROOT / "notebooks/fog_density_consolidated.ipynb"
+    path = ROOT / "notebooks/fog_density_study.ipynb"
     notebook = nbformat.read(path, as_version=4)
     runtime = ModuleType("fog_study_notebook")
     runtime.__file__ = str(path)

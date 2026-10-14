@@ -180,7 +180,7 @@ class TrainingProfiles(unittest.TestCase):
                 "name": "partial-2k",
                 "seed": 42,
                 "training_image_cap": 4,
-                "density_image_cap": None,
+                "density_image_cap": 2,
                 "tuning_image_cap": 2,
             },
             "evaluation_split": "val",

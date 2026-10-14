@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    notebook_path = PROJECT_ROOT / "notebooks/fog_density_consolidated.ipynb"
+    notebook_path = PROJECT_ROOT / "notebooks/fog_density_study.ipynb"
     notebook = nbformat.read(notebook_path, as_version=4)
     nbformat.validate(notebook)
     subprocess.run(

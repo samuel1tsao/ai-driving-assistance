@@ -329,7 +329,7 @@ class MatchedFogEvaluation(unittest.TestCase):
         source, config = self.source_run()
         source_config = dict(config, output=str(source))
         (source / "settings.json").write_text(json.dumps({"config": source_config}))
-        notebook = nbformat.read(ROOT / "notebooks/fog_density_consolidated.ipynb", 4)
+        notebook = nbformat.read(ROOT / "notebooks/fog_density_study.ipynb", 4)
         self.assertTrue(
             any(
                 cell.cell_type == "code" and "run_saved_fog_comparison()" in cell.source

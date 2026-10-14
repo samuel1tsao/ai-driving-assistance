@@ -5,7 +5,7 @@ from pathlib import Path
 import nbformat
 
 ROOT = Path(__file__).resolve().parents[1]
-NOTEBOOK = ROOT / "notebooks/fog_density_consolidated.ipynb"
+NOTEBOOK = ROOT / "notebooks/fog_density_study.ipynb"
 MAX_WORKFLOW_STATEMENTS = 5
 MAX_DEFINITION_SECTIONS = 13
 ORCHESTRATION_FUNCTIONS = {

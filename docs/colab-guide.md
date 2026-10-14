@@ -1,6 +1,6 @@
 # Run the fog study in Google Colab
 
-Open the [current Drive notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC), or upload `notebooks/fog_density_colab.ipynb` and choose a GPU runtime. All study code is in the notebook; no repository checkout, support modules, or file-writing cells are needed. See the [notebook guide](fog-density-consolidated-notebook.md) for the workflow and analytics.
+Open the [current Drive notebook](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC), or upload `notebooks/fog_density_study.ipynb` and choose a GPU runtime. All study code is in the notebook; no repository checkout, support modules, or file-writing cells are needed. See the [notebook guide](fog-density-consolidated-notebook.md) for the workflow and analytics.
 
 ## Configuration
 
@@ -57,7 +57,7 @@ The final notebook step exports its run to a ZIP beside the output directory. Co
 Edit the notebook directly, then create its exact publication copy and optional code bundle:
 
 ```powershell
-.venv/Scripts/python.exe scripts/create_colab_notebook.py
+.venv/Scripts/python.exe scripts/package_colab_notebook.py
 .venv/Scripts/python.exe scripts/check_notebook_code.py
 .venv/Scripts/python.exe scripts/check_colab.py
 ```

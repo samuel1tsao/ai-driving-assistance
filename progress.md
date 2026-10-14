@@ -1,22 +1,17 @@
 # Implementation progress
 
-### Notebook as the sole source; actual frozen-predictor setup
+### One active fog study notebook
 
-User request: remove support implementation files, visibly load and freeze the fog predictor, centralize shared constants, and reduce unnecessary code while retaining profiles, continuation, validation, and analytics.
+User request: keep a single file named `fog_density_study.ipynb` for local work and Colab, remove the older notebook copies, and explain the fog-predictor partition call.
 
 | Status | Work | Verification |
 |---|---|---|
-| DONE | Remove six support modules and obsolete support/notebook generators | Tests and CLI execute only notebook definition cells; no study logic is copied into another Python module. |
-| DONE | Centralize profile/model/seed/artifact names and defaults | One constants/profile section; profile versions remain independent; original batch/optimizer/checkpoint contracts retained. |
-| DONE | Replace path-only predictor setup with actual model restoration and freezing | Visible setup calls the loader; predictor-only implementation is grouped beside it; cache reopens replaced checkpoints. |
-| DONE | Remove unused adapter experiment and duplicate configuration code | Removed the obsolete adapter experiment, duplicate profile/default definitions, source-file hashing, and redundant forwarding functions; retained the study and checkpoint contracts. |
-| DONE | Verify predictor and continuation behavior | All 40 tests pass against notebook definitions; directory and ZIP end-to-end workflows pass, including actual model loading/freezing, training, evaluation, reports, checkpoint reuse, and export. |
-| DONE | Publish notebook and Git; preserve previous Drive outputs | Drive notebook, code bundle, and guide updated in place and verified. Previous notebook outputs are backed up; source cleanup pushed to origin/main in cb71906. |
+| DONE | Consolidate the local notebook source and documentation around `notebooks/fog_density_study.ipynb`; remove the old active notebook names and generators | Notebook structure, syntax, Ruff, and readability checks pass. |
+| DONE | Remove older notebook copies from the Drive study folder | Folder inspection confirms the canonical notebook remains alongside the guide, data, code bundle, runtime, and run folders; prior version copies are deleted. |
+| DONE | Keep the missing-checkpoint predictor fallback, but train it from the full density split in every profile | Profile tests pass with an intentionally small density cap; only detector train/tuning rows are capped. The predictor is frozen after loading or fitting. |
+| DONE | Package and sync the final notebook/docs to Drive, remove old Drive copies, and prepare intended local changes for Git publication | Drive folder was rechecked. All 44 unit tests and static checks pass; the local bounded end-to-end run stalled inside its training cell and is reported as inconclusive. |
 
-Drive backup: `fog_density_study_before_notebook_only_20261012.ipynb`, ID `1ASyxvTTuKbZwMfWVdiopK_Nd0Y8sNSl8`. Canonical notebook readback at 2026-10-12 23:01 PDT confirms 48 cells, seven purpose-labeled implementation sections, one constants/profile section, the real predictor setup call and freezing code, and no support references/file-writing cells. Code bundle is 62,357 bytes and contains only the standalone notebook, data packager, and guide. Removed stale extracted support sources from local test runtime folders as well.
-
-Validation: 40 tests pass; syntax, Ruff formatting/lint, readability, exact Colab-mirror checks, focused input/metric checks, and directory/ZIP bounded notebook workflows pass. Existing full/checkpoint contracts and saved results are preserved. No full research run was launched. Pre-existing edits in `fog_density_detection_research.ipynb` and report folders remain outside this change.
-
+The partition call exists only for the missing-checkpoint fallback: it provides beta-labeled training and validation rows to fit the predictor. Existing checkpoints load frozen without fitting. Detector profiles now share the full density train/validation data even when their detector rows are capped. The detector run no longer writes held-out beta-prediction evaluation CSVs.
 
 ### Single-notebook runtime and readable workflow correction
 

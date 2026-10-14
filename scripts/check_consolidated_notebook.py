@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--images", type=int, default=2)
     args = parser.parse_args()
     notebook = nbformat.read(
-        ROOT / "notebooks/fog_density_consolidated.ipynb", as_version=4
+        ROOT / "notebooks/fog_density_study.ipynb", as_version=4
     )
     nbformat.validate(notebook)
     for index, cell in enumerate(notebook.cells):

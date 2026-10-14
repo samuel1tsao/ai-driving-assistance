@@ -31,7 +31,7 @@ class ProfileContinuation(unittest.TestCase):
         self.original_directory = Path.cwd()
         self.addCleanup(os.chdir, self.original_directory)
         self.folder = Path(self.temporary.name)
-        notebook = nbformat.read(ROOT / "notebooks/fog_density_consolidated.ipynb", 4)
+        notebook = nbformat.read(ROOT / "notebooks/fog_density_study.ipynb", 4)
         namespace = {}
         for cell in notebook.cells:
             if cell.metadata.get("fogStudyConstants") or cell.metadata.get(

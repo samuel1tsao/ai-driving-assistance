@@ -139,9 +139,7 @@ def main():
             pass
         else:
             raise AssertionError("Oracle silently used unknown beta")
-    notebook = nbformat.read(
-        ROOT / "notebooks/fog_density_detection_research.ipynb", as_version=4
-    )
+    notebook = nbformat.read(ROOT / "notebooks/fog_density_study.ipynb", as_version=4)
     nbformat.validate(notebook)
     for cell in notebook.cells:
         if cell.cell_type == "code":
