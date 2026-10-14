@@ -79,98 +79,72 @@ class ProfileContinuation(unittest.TestCase):
         )
         return recorded, paths["run"]
 
-    def test_finished_run_reuses_without_data_weights_identity_or_training(self):
+    def test_finished_run_loads_data_and_profile_runner_reuses_checkpoints(self):
         recorded, output = self.existing_run(True)
         configuration, paths = workflow.resolve_study_configuration(
             copy.deepcopy(self.settings)
         )
         self.assertEqual(configuration, recorded)
         self.assertEqual(workflow.SETTINGS["profile"]["density_sampling"], "natural")
+        rows = [{"id": "loaded"}]
         with (
+            patch.object(workflow, "prepare_profile_dataset_subset") as prepare,
             patch.object(
-                workflow,
-                "prepare_profile_dataset_subset",
-                side_effect=AssertionError("no extraction"),
+                workflow, "load_and_validate_dataset_annotations", return_value=rows
             ),
-            patch.object(
-                workflow,
-                "load_and_validate_manifest",
-                side_effect=AssertionError("no image loading"),
-            ),
+            patch.object(workflow, "display_dataset_split_summary"),
             patch.object(
                 workflow,
                 "run_training_preflight",
-                side_effect=AssertionError("no training preflight"),
+                return_value=pd.DataFrame([{"ready": True}]),
             ),
             patch.object(
                 workflow,
                 "run_configured_detector_study",
-                side_effect=AssertionError("no training"),
-            ),
-            patch.object(
-                workflow,
-                "execute_analysis",
-                return_value=pd.DataFrame([{"mAP50_95": 0.5}]),
-            ),
+                return_value=(
+                    pd.DataFrame([{"mAP50_95": 0.5}]),
+                    pd.DataFrame([{"status": "complete"}]),
+                ),
+            ) as runner,
+            patch.object(workflow, "display"),
         ):
             workflow.prepare_fog_data()
-            rows = workflow.load_and_validate_dataset_annotations(configuration)
-            self.assertEqual(rows, [])
-            checks = workflow.display_training_readiness_checks(configuration, rows)
-            results, status = workflow.train_or_analyze_configured_study(
-                "train", configuration, rows, checks
+            annotations, checks = workflow.validate_fog_data(configuration)
+            results, status = workflow.train_detector_profile(
+                configuration, annotations, checks
             )
-            workflow.verify_subset_completion_and_checkpoint_reuse(results, rows)
-            self.assertFalse(results.empty)
+        prepare.assert_called_once()
+        runner.assert_called_once_with(rows, recorded)
+        self.assertFalse(results.empty)
+        self.assertEqual(status.iloc[0]["status"], "complete")
         self.assertEqual(paths["run"], output)
         self.assertEqual(
             json.loads((output / "settings.json").read_text())["config"], recorded
         )
 
     def test_unfinished_run_resumes_saved_sampling_and_budget(self):
-        recorded, output = self.existing_run(False)
+        recorded, _ = self.existing_run(False)
         changed_defaults = copy.deepcopy(self.settings)
         changed_defaults["profile"].update(
             epochs=99, density_epochs=99, density_sampling="balanced_bins"
         )
-        configuration, paths = workflow.resolve_study_configuration(changed_defaults)
+        configuration, _ = workflow.resolve_study_configuration(changed_defaults)
         self.assertEqual(configuration, recorded)
         self.assertFalse(workflow.should_reuse_completed_training(configuration))
+        checks = pd.DataFrame([{"ready": True}])
         with patch.object(
             workflow,
             "run_configured_detector_study",
-            return_value=(pd.DataFrame(), None),
+            return_value=(pd.DataFrame(), pd.DataFrame()),
         ) as train:
-            workflow.train_or_analyze_configured_study(
-                "train", configuration, [], pd.DataFrame([{"ready": True}])
-            )
+            workflow.train_detector_profile(configuration, [], checks)
             self.assertEqual(train.call_args.args[1], recorded)
 
-    def test_analyze_routes_only_to_saved_reports_and_unknown_action_never_trains(self):
-        configuration, paths = workflow.resolve_study_configuration(
-            copy.deepcopy(self.settings)
-        )
-        with (
-            patch.object(
-                workflow,
-                "run_configured_detector_study",
-                side_effect=AssertionError("no training"),
-            ),
-            patch.object(
-                workflow,
-                "run_checkpoint_evaluation",
-                side_effect=AssertionError("no inference"),
-            ),
-            patch.object(workflow, "execute_analysis", return_value=pd.DataFrame()),
-        ):
-            results, status = workflow.train_or_analyze_configured_study(
-                " ANALYZE ", configuration, None, None
-            )
-            self.assertIsNone(status)
-            with self.assertRaisesRegex(ValueError, "unknown actions"):
-                workflow.train_or_analyze_configured_study(
-                    "typo", configuration, [], None
-                )
+    def test_invalid_retrain_type_is_rejected_without_an_action_selector(self):
+        settings = copy.deepcopy(self.settings)
+        settings["retrain"] = "yes"
+        with self.assertRaisesRegex(ValueError, "retrain"):
+            workflow.resolve_study_configuration(settings)
 
     def test_retrain_allocates_fresh_sibling_and_preserves_previous_run(self):
         recorded, previous = self.existing_run(True)
@@ -194,12 +168,11 @@ class ProfileContinuation(unittest.TestCase):
         continued, continued_paths = workflow.resolve_study_configuration(settings)
         self.assertEqual(continued_paths["run"], paths["run"])
 
-    def test_retrain_is_boolean_and_only_for_training(self):
-        for action, flag in [("analyze", True), ("evaluate", True), ("train", "yes")]:
-            settings = copy.deepcopy(self.settings)
-            settings.update(action=action, retrain=flag)
-            with self.assertRaisesRegex(ValueError, "retrain"):
-                workflow.resolve_study_configuration(settings)
+    def test_retrain_is_boolean(self):
+        settings = copy.deepcopy(self.settings)
+        settings["retrain"] = "yes"
+        with self.assertRaisesRegex(ValueError, "retrain"):
+            workflow.resolve_study_configuration(settings)
 
     def test_legacy_full_configuration_keeps_full_continuation_identity(self):
         self.settings["profile"].update(name="full", initialization="existing_full_run")
@@ -238,7 +211,6 @@ class FrozenPredictorSetup(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.folder = Path(self.temporary.name)
         self.settings = {
-            "action": workflow.ACTION_TRAIN,
             "profile": {"name": workflow.PROFILE_2K},
             "density_predictor": {"seed": workflow.DEFAULT_SEED},
         }
@@ -295,30 +267,52 @@ class FrozenPredictorSetup(unittest.TestCase):
         self.assertIsNot(current, previous)
         self.assertAlmostEqual(current.features[-1].bias.item(), 2.0)
 
-    def test_full_run_without_saved_predictor_leaves_setup_to_training(self):
-        self.settings["profile"] = {"name": workflow.PROFILE_FULL}
-        self.config["profile_name"] = workflow.PROFILE_FULL
-        self.config["density_checkpoint"] = None
-        self.assertIsNone(workflow.resolve_density_predictor_checkpoint(self.config))
-
-    def test_evaluation_selects_the_source_runs_saved_predictor(self):
-        source = self.folder / "source"
-        path = (
-            source
-            / f"{workflow.DENSITY_RUN_PREFIX}-{workflow.DEFAULT_SEED}"
-            / workflow.BEST_CHECKPOINT
-        )
-        self.save_predictor(path, bias=1.0)
-        (source / workflow.RUN_SETTINGS_FILE).write_text(
-            json.dumps({"config": {"density_checkpoint": None}})
-        )
-        self.settings["action"] = workflow.ACTION_EVALUATE
-        self.config["evaluation_source"] = str(source)
+    def test_missing_predictor_resolves_to_profile_density_directory(self):
+        checkpoint = workflow.resolve_density_predictor_checkpoint(self.config)
         self.assertEqual(
-            workflow.resolve_density_predictor_checkpoint(self.config), path
+            checkpoint,
+            Path(self.config["output"])
+            / f"{workflow.DENSITY_RUN_PREFIX}-42"
+            / "best.pt",
         )
-        model = workflow.load_fog_density_model(path, "cpu")
-        self.assertAlmostEqual(model.features[-1].bias.item(), 1.0)
+
+    def test_missing_predictor_trains_even_for_rgb_only_profile(self):
+        expected = Path(self.config["output"]) / "density-42" / "best.pt"
+        model = workflow.FogDensityRegressor()
+        rows = [{"id": "image"}]
+
+        def train(parts, config, directory, seed):
+            self.assertEqual(parts, "partitions")
+            self.assertEqual(config["density_checkpoint"], None)
+            self.assertEqual(directory, expected.parent)
+            self.assertEqual(seed, 42)
+            directory.mkdir(parents=True)
+            torch.save({"model": model.state_dict()}, expected)
+            return model
+
+        self.config["arms"] = [workflow.ARM_RGB]
+        with (
+            patch.object(
+                workflow, "create_training_data_partitions", return_value="partitions"
+            ),
+            patch.object(workflow, "fit_fog_density_model", side_effect=train) as fit,
+            patch.object(
+                workflow, "load_fog_density_model", return_value=model
+            ) as load,
+        ):
+            loaded = workflow.load_or_train_fog_density_model(self.config, rows)
+            reused = workflow.load_or_train_fog_density_model(self.config, rows)
+        self.assertIs(loaded, model)
+        self.assertIs(reused, model)
+        fit.assert_called_once()
+        load.assert_called_once_with(expected, "cpu")
+
+    def test_analysis_resolves_predictor_from_saved_profile(self):
+        source = Path(self.config["output"])
+        path = source / "density-42" / "best.pt"
+        self.save_predictor(path, bias=1.0)
+        config = dict(self.config, output=str(source), density_checkpoint=None)
+        self.assertEqual(workflow.resolve_density_predictor_checkpoint(config), path)
 
     def test_shared_artifact_names_control_completed_run_detection(self):
         output = Path(self.config["output"])

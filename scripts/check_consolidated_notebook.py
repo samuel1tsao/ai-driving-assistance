@@ -124,6 +124,21 @@ def main():
                 shell.user_ns["TRAINING_CONFIGURATION"]["density_checkpoint"] = str(
                     fixture_checkpoint
                 )
+            if (
+                "fog_results, fog_status = run_saved_fog_comparison()" in cell.source
+                and shell.user_ns["SETTINGS"]["test"]["enabled"]
+            ):
+                message = (
+                    "Local smoke test skips matched Cityscapes analysis: "
+                    "the bounded fixture contains nuScenes only.\n"
+                )
+                cell.execution_count = execution_count + 1
+                cell.outputs = [
+                    nbformat.v4.new_output("stream", name="stdout", text=message)
+                ]
+                print(message, flush=True)
+                execution_count += 1
+                continue
             print(f"Executing cell {index}", flush=True)
             execution_count += 1
             with capture_output() as captured:
@@ -155,7 +170,7 @@ def main():
         nbformat.write(notebook, executed)
         print(f"Executed notebook: {executed}", flush=True)
     print(
-        "PASS: consolidated notebook completed including checkpoint reuse and ZIP export.",
+        "PASS: bounded detector training, validation, reports and checkpoint export completed; matched Cityscapes analysis is covered by its standalone unit test.",
         flush=True,
     )
 

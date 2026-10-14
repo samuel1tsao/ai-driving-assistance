@@ -10,13 +10,14 @@ MAX_WORKFLOW_STATEMENTS = 5
 MAX_DEFINITION_SECTIONS = 13
 ORCHESTRATION_FUNCTIONS = {
     "resolve_study_configuration",
-    "train_or_analyze_configured_study",
-    "execute_training",
+    "train_detector_profile",
+    "run_saved_fog_comparison",
     "run_configured_detector_study",
     "run_comparison_matrix",
     "run_detector_comparison",
     "run_detector_training_and_evaluation",
     "resolve_density_predictor_checkpoint",
+    "load_or_train_fog_density_model",
     "run_checkpoint_evaluation",
     "evaluate_saved_comparison",
     "validate_matched_evaluation",
@@ -88,16 +89,21 @@ def main():
         index
         for index, cell in enumerate(notebook.cells)
         if cell.cell_type == "markdown"
-        and cell.source.startswith("### Load the fog-density model")
+        and cell.source.startswith("### Load or train the fog-density model")
     )
     predictor_workflow = notebook.cells[setup_heading + 1].source
     assert (
-        "resolve_density_predictor_checkpoint(TRAINING_CONFIGURATION)"
+        "load_or_train_fog_density_model(TRAINING_CONFIGURATION, rows)"
         in predictor_workflow
     )
-    assert "load_fog_density_model(" in predictor_workflow
-    assert "ARM_DENSITY not in" in predictor_workflow
-    assert 'TRAINING_CONFIGURATION["arms"]' in predictor_workflow
+    assert "ARM_DENSITY" not in predictor_workflow
+    assert "train_detector_profile(TRAINING_CONFIGURATION, rows, checks)" in "\n".join(
+        cell.source for cell in notebook.cells if cell.cell_type == "code"
+    )
+    assert "run_saved_fog_comparison()" in "\n".join(
+        cell.source for cell in notebook.cells if cell.cell_type == "code"
+    )
+    assert 'SETTINGS["action"]' not in "\n".join(cell.source for cell in notebook.cells)
     assert "setup_fog_density_model" not in definitions
     print(
         f"PASS: notebook-only study, centralized constants, {len(helper_cells)} collapsed implementation sections, and high-level workflow."

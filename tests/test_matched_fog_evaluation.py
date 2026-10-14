@@ -325,76 +325,53 @@ class MatchedFogEvaluation(unittest.TestCase):
             self.assertEqual(len(status), 6)
             self.assertFalse(results.empty)
 
-    def test_notebook_evaluation_executes_in_reading_order(self):
+    def test_standalone_notebook_cell_loads_saved_models_and_runs_analysis(self):
         source, config = self.source_run()
+        source_config = dict(config, output=str(source))
+        (source / "settings.json").write_text(json.dumps({"config": source_config}))
         notebook = nbformat.read(ROOT / "notebooks/fog_density_consolidated.ipynb", 4)
-        namespace = {}
-        original_directory = Path.cwd()
-        original_paths = sys.path[:]
-        try:
-            for cell in notebook.cells:
-                if cell.cell_type != "code":
-                    continue
-                code = cell.source
-                if "subprocess.check_call" in code:
-                    continue
-                with (
-                    contextlib.redirect_stdout(io.StringIO()),
-                    contextlib.redirect_stderr(io.StringIO()),
-                ):
-                    exec(compile(code, "notebook fixture cell", "exec"), namespace)
-                if 'SETTINGS["density_predictor"] =' in code:
-                    namespace["SETTINGS"]["density_predictor"].update(
-                        checkpoint=str(source / "density-42" / "best.pt"),
-                        source_run="fixture",
-                    )
-                if cell.metadata.get("fogStudySettings"):
-                    settings = namespace["SETTINGS"]
-                    settings.update(
-                        action="evaluate", runtime_root=str(self.root / "runtime")
-                    )
-                    settings["drive_mount"] = str(self.root / "drive")
-                    settings["data"].update(
-                        location={"kind": "path", "path": str(self.root)},
-                        low_disk=False,
-                    )
-                    settings["output"]["location"] = {
-                        "kind": "path",
-                        "path": str(self.root),
-                    }
-                    settings["training"].update(
-                        device="cpu", amp=False, seeds=[42], size=32
-                    )
-                    settings["profile"]["size"] = 32
-                    settings["density_predictor"] = {
-                        "checkpoint": str(source / "density-42" / "best.pt"),
-                        "source_run": "fixture",
-                        "seed": 42,
-                    }
-                    settings["evaluation"].update(
-                        source_run=str(source),
-                        cityscapes_root=str(self.root),
-                        output_name="notebook-evaluation",
-                        max_pairs=1,
-                    )
-                if (
-                    "resolve_study_configuration(SETTINGS)" in code
-                    or cell.metadata.get("fogStudySection") == "predictor"
-                ):
-                    namespace.update(
-                        ObjectDetector=FixtureDetector,
-                        FogAdapter=FixtureAdapter,
-                        FogDensityRegressor=FixtureDensity,
-                    )
-            self.assertEqual(len(namespace["status"]), 6)
-            self.assertTrue(Path(namespace["archive_path"]).is_file())
-            self.assertEqual(
-                Path(namespace["TRAINING_CONFIGURATION"]["output"]),
-                self.root / "notebook-evaluation",
+        self.assertTrue(
+            any(
+                cell.cell_type == "code" and "run_saved_fog_comparison()" in cell.source
+                for cell in notebook.cells
             )
-        finally:
-            os.chdir(original_directory)
-            sys.path[:] = original_paths
+        )
+        settings = {
+            "evaluation": {
+                "source_run": str(source),
+                "output_name": "standalone-evaluation",
+                "cityscapes_root": str(self.root),
+                "split": "test",
+                "max_pairs": 1,
+            },
+            "density_predictor": {"seed": 42},
+        }
+        training_configuration = {"output": str(source), "device": "cpu", "amp": False}
+        paths = {"output_root": self.root}
+        loaded = []
+        predictor = FixtureDensity()
+
+        def load_predictor(path, device):
+            loaded.append((path, device))
+            return predictor
+
+        with (
+            patch.object(training, "SETTINGS", settings, create=True),
+            patch.object(
+                training, "TRAINING_CONFIGURATION", training_configuration, create=True
+            ),
+            patch.object(training, "RESOLVED_PATHS", paths, create=True),
+            patch.object(
+                training, "load_fog_density_model", side_effect=load_predictor
+            ),
+            patch.object(training, "ObjectDetector", FixtureDetector),
+            patch.object(training, "FogAdapter", FixtureAdapter),
+            patch.object(training, "FogDensityRegressor", FixtureDensity),
+        ):
+            results, status = training.run_saved_fog_comparison()
+        self.assertEqual(loaded[0], (source / "density-42" / "best.pt", "cpu"))
+        self.assertEqual(len(status), 6)
+        self.assertFalse(results.empty)
 
 
 if __name__ == "__main__":
