@@ -17,7 +17,7 @@ ORCHESTRATION_FUNCTIONS = {
     "run_detector_comparison",
     "run_detector_training_and_evaluation",
     "resolve_density_predictor_checkpoint",
-    "load_or_train_fog_density_model",
+    "fit_fog_density_model",
     "run_checkpoint_evaluation",
     "evaluate_saved_comparison",
     "validate_matched_evaluation",
@@ -89,22 +89,29 @@ def main():
         index
         for index, cell in enumerate(notebook.cells)
         if cell.cell_type == "markdown"
-        and cell.source.startswith("### Load or train the fog-density model")
+        and cell.source.startswith("### Fit or resume the fog-density model")
     )
     predictor_workflow = notebook.cells[setup_heading + 1].source
-    assert (
-        "load_or_train_fog_density_model(TRAINING_CONFIGURATION, rows)"
-        in predictor_workflow
-    )
+    assert "get_fog_model_training_data(rows)" in predictor_workflow
+    assert "fit_fog_density_model(" in predictor_workflow
     assert "ARM_DENSITY" not in predictor_workflow
-    assert "train_detector_profile(TRAINING_CONFIGURATION, rows, checks)" in "\n".join(
+    code = "\n".join(
         cell.source for cell in notebook.cells if cell.cell_type == "code"
     )
+    assert "train_detector_profile(" in code
+    assert "rows, checks, fog_predictor" in code
+    detector_heading = next(
+        cell.source for cell in notebook.cells
+        if cell.cell_type == "markdown" and cell.source.startswith("## 5.")
+    )
+    assert all(name in detector_heading for name in ("YOLO11n", "YOLO11m", "DETR"))
+    assert "RGB only" in detector_heading and "fog-density estimate" in detector_heading
     assert "run_saved_fog_comparison()" in "\n".join(
         cell.source for cell in notebook.cells if cell.cell_type == "code"
     )
     assert 'SETTINGS["action"]' not in "\n".join(cell.source for cell in notebook.cells)
     assert "setup_fog_density_model" not in definitions
+    assert "load_or_train_fog_density_model" not in definitions
     print(
         f"PASS: notebook-only study, centralized constants, {len(helper_cells)} collapsed implementation sections, and high-level workflow."
     )

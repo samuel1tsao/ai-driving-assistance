@@ -21,7 +21,7 @@ classify_density_bin, select_epoch_sample_indices, count_epoch_samples = (
     notebook.select_epoch_sample_indices,
     notebook.count_epoch_samples,
 )
-select_profile_rows = notebook.select_profile_rows
+select_profile_training_rows = notebook.select_profile_training_rows
 create_training_data_partitions = notebook.create_training_data_partitions
 validate_and_record_run_identity = notebook.validate_and_record_run_identity
 
@@ -113,7 +113,7 @@ class TrainingProfiles(unittest.TestCase):
         self.assertEqual(balanced.iloc[0].dataset, "foggy_cityscapes")
         self.assertAlmostEqual(balanced.iloc[0].mAP50_95, 0.3)
 
-    def test_partial_selection_is_deterministic_scene_safe_and_excludes_final_test(
+    def test_partial_selection_only_caps_detector_training_rows(
         self,
     ):
         rows = []
@@ -126,14 +126,11 @@ class TrainingProfiles(unittest.TestCase):
             annotation(f"val-{index}", "val", "tuning-scene") for index in range(4)
         )
         rows.append(annotation("test-0", "test", "test-scene"))
-        first = select_profile_rows(
-            rows, "partial-2k", 42, {"detector_train": 6, "density_train": 6, "val": 2}
-        )
-        second = select_profile_rows(
-            rows, "partial-2k", 42, {"detector_train": 6, "density_train": 6, "val": 2}
-        )
+        first = select_profile_training_rows(rows, "partial-2k", 42, 6)
+        second = select_profile_training_rows(rows, "partial-2k", 42, 6)
         self.assertEqual([row["id"] for row in first], [row["id"] for row in second])
-        self.assertNotIn("test-0", {row["id"] for row in first})
+        self.assertIn("test-0", {row["id"] for row in first})
+        self.assertEqual(sum(row["split"] == "val" for row in first), 4)
         selected_groups = {
             row["group"] for row in first if row["split"] == "detector_train"
         }
@@ -145,9 +142,8 @@ class TrainingProfiles(unittest.TestCase):
             annotation(f"val-{index}", "val", f"tuning-{index // 2}")
             for index in range(8)
         ]
-        limits = {"detector_train": 2, "density_train": 2, "val": 6}
-        first = select_profile_rows(rows, "partial-2k", 42, limits)
-        second = select_profile_rows(rows, "partial-5k", 42, limits)
+        first = select_profile_training_rows(rows, "partial-2k", 42, 2)
+        second = select_profile_training_rows(rows, "partial-5k", 42, 2)
         first_ids = [row["id"] for row in first if row["split"] == "val"]
         second_ids = [row["id"] for row in second if row["split"] == "val"]
         self.assertEqual(first_ids, second_ids)
@@ -161,7 +157,10 @@ class TrainingProfiles(unittest.TestCase):
             )
             rows.append(
                 annotation(
-                    f"density-{group}", "density_train", f"fog-{group}", "foggy_cityscapes"
+                    f"density-{group}",
+                    "density_train",
+                    f"fog-{group}",
+                    "foggy_cityscapes",
                 )
             )
         rows.extend(
@@ -180,16 +179,14 @@ class TrainingProfiles(unittest.TestCase):
                 "name": "partial-2k",
                 "seed": 42,
                 "training_image_cap": 4,
-                "density_image_cap": 2,
-                "tuning_image_cap": 2,
             },
             "evaluation_split": "val",
         }
         partitions = create_training_data_partitions(rows, configuration)
         self.assertEqual(len(partitions["detector_train"]), 4)
         self.assertEqual(len(partitions["density_train"]), 6)
-        self.assertEqual(len(partitions["val"]), 2)
-        self.assertEqual(partitions["test"], [])
+        self.assertEqual(len(partitions["val"]), 8)
+        self.assertEqual(len(partitions["test"]), 1)
 
         full = create_training_data_partitions(
             rows,
@@ -203,6 +200,24 @@ class TrainingProfiles(unittest.TestCase):
         self.assertEqual(len(full["density_train"]), 6)
         self.assertEqual(len(full["val"]), 8)
         self.assertEqual(len(full["test"]), 1)
+
+    def test_smoke_mode_alone_caps_validation_rows(self):
+        rows = [
+            annotation(f"val-{index}", "val", f"scene-{index}") for index in range(8)
+        ]
+        config = {
+            "profile_name": "setup",
+            "profile_scope": {
+                "name": "setup",
+                "seed": 42,
+                "training_image_cap": 48,
+                "validation_image_cap": 3,
+            },
+            "evaluation_split": "val",
+        }
+        self.assertEqual(len(create_training_data_partitions(rows, config)["val"]), 3)
+        config["profile_scope"].pop("validation_image_cap")
+        self.assertEqual(len(create_training_data_partitions(rows, config)["val"]), 8)
 
     def test_changed_profile_identity_is_rejected(self):
         with tempfile.TemporaryDirectory(dir=PROJECT_ROOT / ".runtime") as temporary:

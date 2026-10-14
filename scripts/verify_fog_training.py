@@ -30,11 +30,17 @@ def main():
         run_configured_detector_study,
         run_training_preflight,
         create_training_data_partitions,
+        get_fog_model_training_data,
+        resolve_density_predictor_checkpoint,
+        fit_fog_density_model,
     ) = (
         notebook.default_training_configuration,
         notebook.run_configured_detector_study,
         notebook.run_training_preflight,
         notebook.create_training_data_partitions,
+        notebook.get_fog_model_training_data,
+        notebook.resolve_density_predictor_checkpoint,
+        notebook.fit_fog_density_model,
     )
     ObjectDetector, load_and_validate_manifest = (
         notebook.ObjectDetector,
@@ -110,7 +116,13 @@ def main():
         assert (
             len(create_training_data_partitions(rows)["test"]) == 1
         )  # unlabeled density row cannot become a negative detection image
-        results, status = run_configured_detector_study(rows, config)
+        fog_model = fit_fog_density_model(
+            get_fog_model_training_data(rows),
+            config,
+            resolve_density_predictor_checkpoint(config),
+            config["seeds"][0],
+        )
+        results, status = run_configured_detector_study(rows, config, fog_model)
         assert len(status) == 6 and (status.status == "complete").all()
         for name in config["checkpoints"]:
             model = ObjectDetector(name, config["checkpoints"][name], "cpu")
@@ -138,14 +150,14 @@ def main():
         mtimes = {
             p: str(p.stat().st_mtime_ns) for p in (folder / "run").glob("*/last.pt")
         }
-        run_configured_detector_study(rows, config)
+        run_configured_detector_study(rows, config, fog_model)
         assert all(str(p.stat().st_mtime_ns) == old for p, old in mtimes.items()), (
             "Completed resume retrained a model"
         )
         altered = copy.deepcopy(config)
         altered["epochs"] = 2
         try:
-            run_configured_detector_study(rows, altered)
+            run_configured_detector_study(rows, altered, fog_model)
         except ValueError as error:
             assert "changed" in str(error)
         else:

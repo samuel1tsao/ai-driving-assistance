@@ -301,7 +301,7 @@ class CheckpointRegressions(unittest.TestCase):
         }
         configuration = {**self.configuration, "density_epochs": 2}
 
-        def train_density(directory):
+        def train_density(checkpoint_path):
             with (
                 patch.object(
                     self.training, "FogDensityRegressor", SmallDensityEstimator
@@ -313,14 +313,14 @@ class CheckpointRegressions(unittest.TestCase):
                 ),
             ):
                 self.training.fit_fog_density_model(
-                    create_training_data_partitions, configuration, directory, 42
+                    create_training_data_partitions, configuration, checkpoint_path, 42
                 )
-            return torch.load(directory / "last.pt", weights_only=True)
+            return torch.load(checkpoint_path.parent / "last.pt", weights_only=True)
 
         expected = train_density(
-            Path(self.temporary_directory.name) / "density-complete"
+            Path(self.temporary_directory.name) / "density-complete" / "best.pt"
         )
-        interrupted = Path(self.temporary_directory.name) / "density-interrupted"
+        interrupted = Path(self.temporary_directory.name) / "density-interrupted" / "best.pt"
         original_save = self.training.save_density_training_checkpoint
 
         def save_then_crash(session, improved=False):
@@ -355,7 +355,7 @@ class CheckpointRegressions(unittest.TestCase):
         ):
             with self.assertRaises(Timeout):
                 self.training.run_configured_detector_study(
-                    [], {**self.configuration, "output": str(output)}
+                    [], {**self.configuration, "output": str(output)}, None
                 )
 
     def test_overall_progress_counts_prior_epochs_and_current_saved_steps(self):

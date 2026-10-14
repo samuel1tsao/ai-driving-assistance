@@ -21,9 +21,7 @@ def main():
     )
     parser.add_argument("--images", type=int, default=2)
     args = parser.parse_args()
-    notebook = nbformat.read(
-        ROOT / "notebooks/fog_density_study.ipynb", as_version=4
-    )
+    notebook = nbformat.read(ROOT / "notebooks/fog_density_study.ipynb", as_version=4)
     nbformat.validate(notebook)
     for index, cell in enumerate(notebook.cells):
         if cell.cell_type != "code":
@@ -114,6 +112,19 @@ def main():
                         "kind": "fog-density-v1",
                         "beta_scale": shell.user_ns["BETA_SCALE"],
                         "train_groups": [["nuscenes", "fixture-held-out"]],
+                        "planned_epochs": shell.user_ns["TRAINING_CONFIGURATION"][
+                            "density_epochs"
+                        ],
+                        "density_sampling": "natural",
+                        "seed": 42,
+                        "epoch": shell.user_ns["TRAINING_CONFIGURATION"][
+                            "density_epochs"
+                        ],
+                        "step": 0,
+                        "best_loss": 0.0,
+                        "running_sum": 0.0,
+                        "running_count": 0,
+                        "history": [],
                         "model": shell.user_ns["FogDensityRegressor"]().state_dict(),
                     },
                     fixture_checkpoint,

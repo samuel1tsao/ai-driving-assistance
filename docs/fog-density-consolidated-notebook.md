@@ -8,24 +8,24 @@ The first section contains shared constants and `PROFILE_SETTINGS`. Model names,
 
 The **Run settings** cell chooses environment, profile, data/output locations, evaluation source, and the density-predictor checkpoint. The archive URL is one constant, `DATA_ARCHIVE_URL`; the notebook reads the existing Drive ZIP when it is already in the configured folder.
 
-The visible workflow is:
+A new developer should be able to follow the notebook from its visible cells in a few minutes:
 
-1. Load and prepare the same full dataset for every profile.
-2. Validate the annotations.
-3. Load the saved, frozen fog-density model; if no checkpoint exists, train it once on the full density-training split, save its best checkpoint, then keep it frozen. Partial-profile limits apply only to detector rows.
-4. Apply profile row limits inside the training partitions, then train or resume the detector comparisons.
-5. Run the independent matched clear/fog analysis and review its tables and graphs.
-6. Export checkpoints and reports.
+1. **Load data:** use the configured archive and manifests to prepare the same full dataset for every profile.
+2. **Check it:** confirm images, detection boxes, split boundaries, and fog-density labels.
+3. **Fit the fog model:** beta is the dataset's numeric fog-density label; larger beta means denser synthetic fog. Restore its checkpoint and epoch count when available, continue unfinished epochs, or start with seeded default weights when absent. Save the best checkpoint and freeze this one model for every detector run.
+4. **Train six detector runs:** YOLO11n, YOLO11m, and DETR each get a separate RGB-only run and a separate RGB-plus-estimated-density run. Each run has its own checkpoint and follows the selected profile's epoch limit.
+5. **Analyze:** inspect the configured test split and reports. For the direct clear-versus-fog hypothesis test, run the matched evaluation cell; it scores each saved detector on the same labeled Cityscapes scenes in clear and fog conditions.
+6. **Export:** package the selected profile's checkpoints and reports.
 
-Supporting functions are organized by purpose in collapsed cells. Expand them to inspect or edit implementation; their source is ordinary Python. The unused legacy adapter experiment and duplicate profile/default implementations were removed. Checkpoint recovery, matched validation, and analytics remain because they support the study's requested behavior.
+Supporting functions are organized by purpose in collapsed cells. Expand one only when you need its implementation; the visible cells show the order and purpose of the work. The A100 synthetic throughput check remains optional and uses batch size 64; real detector training keeps its image microbatch and gradient accumulation settings.
 
-## The fog-density setup actually loads a model
+## Where the fog model and detector models are fitted
 
-The visible predictor cell calls `load_or_train_fog_density_model(configuration, rows)`. It loads a saved checkpoint when present; otherwise it trains the image-to-beta model from the loaded density rows and saves it. `get_fog_density(images)` uses that model during detector training and analysis.
+The visible fog-model cell calls `get_fog_model_training_data`, `resolve_density_predictor_checkpoint`, and `fit_fog_density_model`. It passes the full density-training split to one fit function. That function restores model weights, optimizer, and saved epoch progress when available; it continues unfinished training, stops at the configured epoch count (or saved early stop), and returns a frozen model. With no checkpoint, it starts from seeded default weights and saves a new one. `get_fog_density(images)` returns the model's estimated beta for detector use.
 
-Profile limits do not change dataset preparation. Each profile reads the same manifests and image paths; the training partition step applies the configured training, density, and tuning caps. The full profile keeps its previous row order and checkpoint settings so an existing full run can continue.
+The next visible training cell calls `train_detector_profile`. Its comparison loop creates separate runs for every configured model and arm: YOLO11n, YOLO11m, and DETR with RGB only, then each with the fog estimate. Detector checkpoints and epoch counts are independent. Profile limits apply only when selecting detector training rows.
 
-The independent analysis cell loads the source run's saved density and detector checkpoints if they are not already in memory. It does not require another detector training run. Matched analysis needs labeled Foggy Cityscapes clear/fog pairs; the configured `gtFine` data supplies the shared boxes.
+The configured test split measures the detector on its labeled images. Native nuScenes has no fog beta, so it cannot by itself provide a clear-versus-fog result. The separate matched analysis cell loads saved detector checkpoints and evaluates the same labeled Foggy Cityscapes scenes in clear and fog variants. It can run again without retraining detectors; the `gtFine` labels provide shared boxes.
 
 ## Training and checkpoint continuation
 
@@ -35,7 +35,7 @@ Resume preserves detector and adapter weights, optimizer, AMP scaler, random-num
 
 ## What the comparison measures
 
-Compare YOLO11n, YOLO11m, and DETR with RGB control and predicted density. Partial-2k and partial-5k use independent pretrained starts and fixed tuning rows; the full profile uses its held-out final set. The A100-specific Colab benchmark settings remain unchanged; the optional synthetic batch-64 benchmark is a separate throughput check.
+Compare YOLO11n, YOLO11m, and DETR with RGB control and predicted density. Partial-2k and partial-5k use independent pretrained starts and the same full validation split; the full profile uses its held-out final set. The A100-specific Colab benchmark settings remain unchanged; the optional synthetic batch-64 benchmark is a separate throughput check.
 
 The hypothesis benchmark needs matching `leftImg8bit/`, `leftImg8bit_foggy/`, and `gtFine/` assets. The same scenes and bounding-box labels are evaluated in clear, light, moderate, and dense fog conditions. Density-only fog images cannot become detection negatives. nuScenes has unknown physical beta, so its results are not a verified clear benchmark.
 

@@ -47,10 +47,16 @@ def main():
         default_training_configuration,
         run_training_preflight,
         run_configured_detector_study,
+        get_fog_model_training_data,
+        resolve_density_predictor_checkpoint,
+        fit_fog_density_model,
     ) = (
         runtime.default_training_configuration,
         runtime.run_training_preflight,
         runtime.run_configured_detector_study,
+        runtime.get_fog_model_training_data,
+        runtime.resolve_density_predictor_checkpoint,
+        runtime.fit_fog_density_model,
     )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -117,7 +123,11 @@ def main():
     if not checks.ready.all():
         raise SystemExit(2)
     if args.command == "train":
-        run_configured_detector_study(rows, config)
+        checkpoint = resolve_density_predictor_checkpoint(config)
+        fog_model = fit_fog_density_model(
+            get_fog_model_training_data(rows), config, checkpoint, config["seeds"][0]
+        )
+        run_configured_detector_study(rows, config, fog_model)
 
 
 if __name__ == "__main__":

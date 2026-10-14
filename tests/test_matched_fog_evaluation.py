@@ -279,9 +279,6 @@ class MatchedFogEvaluation(unittest.TestCase):
             ),
             patch.object(training, "validate_and_record_run_identity"),
             patch.object(
-                training, "prepare_density_estimator_for_seed", return_value=None
-            ),
-            patch.object(
                 training, "run_detector_comparison", return_value={"status": "complete"}
             ),
             patch.object(
@@ -290,9 +287,9 @@ class MatchedFogEvaluation(unittest.TestCase):
         ):
             with FileLock(str(output / "run.lock"), timeout=0):
                 with self.assertRaises(Timeout):
-                    training.run_configured_detector_study([], config)
+                    training.run_configured_detector_study([], config, None)
             self.assertEqual(old.read_bytes(), b"old checkpoint")
-            training.run_configured_detector_study([], config)
+            training.run_configured_detector_study([], config, None)
             self.assertFalse(old.exists())
             self.assertFalse(audit.exists())
 

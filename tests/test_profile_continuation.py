@@ -116,12 +116,12 @@ class ProfileContinuation(unittest.TestCase):
             workflow.prepare_fog_data()
             annotations, checks = workflow.validate_fog_data(configuration)
             results, status = workflow.train_detector_profile(
-                configuration, annotations, checks
+                configuration, annotations, checks, None
             )
         archive.assert_called_once()
         extract.assert_called_once_with(paths["archive"])
         verify.assert_called_once()
-        runner.assert_called_once_with(rows, recorded)
+        runner.assert_called_once_with(rows, recorded, None)
         self.assertFalse(results.empty)
         self.assertEqual(status.iloc[0]["status"], "complete")
         self.assertEqual(paths["run"], output)
@@ -178,7 +178,7 @@ class ProfileContinuation(unittest.TestCase):
             "run_configured_detector_study",
             return_value=(pd.DataFrame(), pd.DataFrame()),
         ) as train:
-            workflow.train_detector_profile(configuration, [], checks)
+            workflow.train_detector_profile(configuration, [], checks, None)
             self.assertEqual(train.call_args.args[1], recorded)
 
     def test_invalid_retrain_type_is_rejected_without_an_action_selector(self):
@@ -308,8 +308,13 @@ class FrozenPredictorSetup(unittest.TestCase):
         self.assertIsNot(current, previous)
         self.assertAlmostEqual(current.features[-1].bias.item(), 2.0)
 
-    def test_missing_predictor_resolves_to_profile_density_directory(self):
+    def test_explicit_predictor_path_is_used_for_restore_or_training(self):
         checkpoint = workflow.resolve_density_predictor_checkpoint(self.config)
+        self.assertEqual(checkpoint, Path(self.config["density_checkpoint"]))
+
+    def test_unconfigured_predictor_uses_profile_density_directory(self):
+        config = {**self.config, "density_checkpoint": None}
+        checkpoint = workflow.resolve_density_predictor_checkpoint(config)
         self.assertEqual(
             checkpoint,
             Path(self.config["output"])
@@ -317,36 +322,47 @@ class FrozenPredictorSetup(unittest.TestCase):
             / "best.pt",
         )
 
-    def test_missing_predictor_trains_even_for_rgb_only_profile(self):
-        expected = Path(self.config["output"]) / "density-42" / "best.pt"
+    def test_completed_fog_model_checkpoint_is_loaded_without_more_training(self):
+        directory = Path(self.config["output"]) / "density-42"
+        best_path = directory / "best.pt"
+        last_path = directory / "last.pt"
+        directory.mkdir(parents=True)
         model = workflow.FogDensityRegressor()
-        rows = [{"id": "image"}]
-
-        def train(parts, config, directory, seed):
-            self.assertEqual(parts, "partitions")
-            self.assertEqual(config["density_checkpoint"], None)
-            self.assertEqual(directory, expected.parent)
-            self.assertEqual(seed, 42)
-            directory.mkdir(parents=True)
-            torch.save({"model": model.state_dict()}, expected)
-            return model
-
-        self.config["arms"] = [workflow.ARM_RGB]
-        with (
-            patch.object(
-                workflow, "create_training_data_partitions", return_value="partitions"
-            ),
-            patch.object(workflow, "fit_fog_density_model", side_effect=train) as fit,
-            patch.object(
-                workflow, "load_fog_density_model", return_value=model
-            ) as load,
+        progress = {
+            "epoch": 2,
+            "step": 0,
+            "best_loss": 0.1,
+            "running_sum": 0.0,
+            "running_count": 0,
+            "history": [],
+        }
+        checkpoint = {
+            "model": model.state_dict(),
+            "optimizer": torch.optim.Adam(model.parameters()).state_dict(),
+            "kind": "fog-density-v1",
+            "beta_scale": workflow.BETA_SCALE,
+            "planned_epochs": 2,
+            "density_sampling": "natural",
+            "seed": 42,
+            "train_groups": [("foggy_cityscapes", "train-a")],
+            **progress,
+        }
+        torch.save(checkpoint, best_path)
+        torch.save(checkpoint, last_path)
+        config = {**self.config, "density_epochs": 2, "density_sampling": "natural"}
+        with patch.object(
+            workflow, "train_one_density_epoch", side_effect=AssertionError("already complete")
         ):
-            loaded = workflow.load_or_train_fog_density_model(self.config, rows)
-            reused = workflow.load_or_train_fog_density_model(self.config, rows)
-        self.assertIs(loaded, model)
-        self.assertIs(reused, model)
-        fit.assert_called_once()
-        load.assert_called_once_with(expected, "cpu")
+            restored = workflow.fit_fog_density_model(
+                {"density_train": [{"dataset": "foggy_cityscapes", "group": "train-a"}], "density_val": []},
+                config,
+                best_path,
+                42,
+            )
+        self.assertFalse(restored.training)
+        self.assertTrue(all(not parameter.requires_grad for parameter in restored.parameters()))
+        for key, tensor in model.state_dict().items():
+            torch.testing.assert_close(tensor, restored.state_dict()[key])
 
     def test_analysis_resolves_predictor_from_saved_profile(self):
         source = Path(self.config["output"])
