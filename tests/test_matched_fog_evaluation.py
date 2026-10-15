@@ -26,7 +26,7 @@ from scripts.run_fog_research import load_notebook_runtime  # noqa: E402
 
 training = analytics = load_notebook_runtime()
 prepare_cityscapes_manifest = training.prepare_cityscapes_manifest
-load_and_validate_manifest = training.load_and_validate_manifest
+load_manifest = training.load_manifest
 
 
 class FixtureDetector:
@@ -89,7 +89,7 @@ class MatchedFogEvaluation(unittest.TestCase):
             Image.fromarray(mask).save(
                 self.root / "gtFine/val/frankfurt" / f"{base}_gtFine_instanceIds.png"
             )
-        self.rows = load_and_validate_manifest(
+        self.rows = load_manifest(
             prepare_cityscapes_manifest(
                 self.root, self.root / "city.json", with_detection_labels=True
             )
@@ -274,7 +274,7 @@ class MatchedFogEvaluation(unittest.TestCase):
         with (
             patch.object(
                 training,
-                "run_training_preflight",
+                "validate_training_inputs",
                 return_value=pd.DataFrame([{"ready": True}]),
             ),
             patch.object(training, "validate_and_record_run_identity"),

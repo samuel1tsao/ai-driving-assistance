@@ -82,6 +82,20 @@ def main():
                 isinstance(node, (ast.FunctionDef, ast.ClassDef)) for node in tree.body
             ), f"workflow cell {index} should call named steps"
     assert len(helper_cells) <= MAX_DEFINITION_SECTIONS
+    step_validators = {
+        name for name in definitions if name.startswith("validate_")
+    }
+    assert step_validators == {
+        "validate_training_inputs",
+        "validate_study_settings",
+        "validate_and_record_run_identity",
+        "validate_matched_evaluation",
+        "validate_and_extract_full_dataset_archive",
+    }
+    assert not any(
+        name.startswith("require_") or name == "readiness_check"
+        for name in definitions
+    )
     assert "_legacy_adapter_experiment" not in definitions
     assert "resolve_density_predictor_checkpoint" in definitions
     assert "load_fog_density_model" in definitions
@@ -99,7 +113,7 @@ def main():
         cell.source for cell in notebook.cells if cell.cell_type == "code"
     )
     assert "train_detector_profile(" in code
-    assert "rows, checks, fog_predictor" in code
+    assert "TRAINING_CONFIGURATION, rows, fog_predictor" in code
     detector_heading = next(
         cell.source for cell in notebook.cells
         if cell.cell_type == "markdown" and cell.source.startswith("## 5.")

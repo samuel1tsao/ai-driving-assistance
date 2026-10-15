@@ -31,13 +31,13 @@ def load_notebook_runtime():
 
 
 def load_rows(config):
-    load_and_validate_manifest = load_notebook_runtime().load_and_validate_manifest
+    load_manifest = load_notebook_runtime().load_manifest
     rows = []
     for name in ("manifest", "city_manifest"):
         path = config.get(name)
         if path and Path(path).is_file():
             print(f"Validate {path}", flush=True)
-            rows.extend(load_and_validate_manifest(path))
+            rows.extend(load_manifest(path))
     return rows
 
 
@@ -45,14 +45,14 @@ def main():
     runtime = load_notebook_runtime()
     (
         default_training_configuration,
-        run_training_preflight,
+        validate_training_inputs,
         run_configured_detector_study,
         get_fog_model_training_data,
         resolve_density_predictor_checkpoint,
         fit_fog_density_model,
     ) = (
         runtime.default_training_configuration,
-        runtime.run_training_preflight,
+        runtime.validate_training_inputs,
         runtime.run_configured_detector_study,
         runtime.get_fog_model_training_data,
         runtime.resolve_density_predictor_checkpoint,
@@ -118,10 +118,10 @@ def main():
         print(results.to_string(index=False))
         return
     rows = load_rows(config)
-    checks = run_training_preflight(config, rows)
-    print(checks.to_string(index=False))
-    if not checks.ready.all():
-        raise SystemExit(2)
+    validate_training_inputs(config, rows)
+    if args.command == "preflight":
+        print("Training inputs are ready.")
+        return
     if args.command == "train":
         checkpoint = resolve_density_predictor_checkpoint(config)
         fog_model = fit_fog_density_model(

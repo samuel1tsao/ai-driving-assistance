@@ -344,7 +344,7 @@ class CheckpointRegressions(unittest.TestCase):
             FileLock(str(output / "run.lock")),
             patch.object(
                 self.training,
-                "run_training_preflight",
+                "validate_training_inputs",
                 return_value=pd.DataFrame({"ready": [True]}),
             ),
             patch.object(

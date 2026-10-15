@@ -95,12 +95,12 @@ class ProfileContinuation(unittest.TestCase):
             patch.object(workflow, "validate_and_extract_full_dataset_archive") as extract,
             patch.object(workflow, "verify_prepared_manifest_files") as verify,
             patch.object(
-                workflow, "load_and_validate_dataset_annotations", return_value=rows
+                workflow, "load_study_data", return_value=rows
             ),
             patch.object(workflow, "display_dataset_split_summary"),
             patch.object(
                 workflow,
-                "run_training_preflight",
+                "validate_training_inputs",
                 return_value=pd.DataFrame([{"ready": True}]),
             ),
             patch.object(
@@ -114,9 +114,9 @@ class ProfileContinuation(unittest.TestCase):
             patch.object(workflow, "display"),
         ):
             workflow.prepare_fog_data()
-            annotations, checks = workflow.validate_fog_data(configuration)
+            annotations = workflow.load_study_data(configuration)
             results, status = workflow.train_detector_profile(
-                configuration, annotations, checks, None
+                configuration, annotations, None
             )
         archive.assert_called_once()
         extract.assert_called_once_with(paths["archive"])
@@ -172,13 +172,15 @@ class ProfileContinuation(unittest.TestCase):
         configuration, _ = workflow.resolve_study_configuration(changed_defaults)
         self.assertEqual(configuration, recorded)
         self.assertFalse(workflow.should_reuse_completed_training(configuration))
-        checks = pd.DataFrame([{"ready": True}])
-        with patch.object(
-            workflow,
-            "run_configured_detector_study",
-            return_value=(pd.DataFrame(), pd.DataFrame()),
-        ) as train:
-            workflow.train_detector_profile(configuration, [], checks, None)
+        with (
+            patch.object(workflow, "validate_training_inputs"),
+            patch.object(
+                workflow,
+                "run_configured_detector_study",
+                return_value=(pd.DataFrame(), pd.DataFrame()),
+            ) as train,
+        ):
+            workflow.train_detector_profile(configuration, [], None)
             self.assertEqual(train.call_args.args[1], recorded)
 
     def test_invalid_retrain_type_is_rejected_without_an_action_selector(self):

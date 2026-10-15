@@ -16,12 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 notebook = load_notebook_runtime()
 (
-    load_and_validate_manifest,
+    load_manifest,
     calculate_coco_detection_metrics,
     FogAdapter,
     get_density_feature,
 ) = (
-    notebook.load_and_validate_manifest,
+    notebook.load_manifest,
     notebook.calculate_coco_detection_metrics,
     notebook.FogAdapter,
     notebook.get_density_feature,
@@ -53,7 +53,7 @@ def main():
             resolve_foggy_images(folder, explicit=folder / "nested")
             == folder / "nested"
         )
-        city_rows = load_and_validate_manifest(
+        city_rows = load_manifest(
             prepare_cityscapes_manifest(folder, folder / "city.json")
         )
         assert len(city_rows) == 6 and all(
@@ -79,7 +79,7 @@ def main():
         def load(rows):
             path = folder / "manifest.json"
             path.write_text(json.dumps(rows))
-            return load_and_validate_manifest(path)
+            return load_manifest(path)
 
         valid = load([row])
         for field, value in [

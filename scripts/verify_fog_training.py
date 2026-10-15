@@ -28,7 +28,7 @@ def main():
     (
         default_training_configuration,
         run_configured_detector_study,
-        run_training_preflight,
+        validate_training_inputs,
         create_training_data_partitions,
         get_fog_model_training_data,
         resolve_density_predictor_checkpoint,
@@ -36,15 +36,15 @@ def main():
     ) = (
         notebook.default_training_configuration,
         notebook.run_configured_detector_study,
-        notebook.run_training_preflight,
+        notebook.validate_training_inputs,
         notebook.create_training_data_partitions,
         notebook.get_fog_model_training_data,
         notebook.resolve_density_predictor_checkpoint,
         notebook.fit_fog_density_model,
     )
-    ObjectDetector, load_and_validate_manifest = (
+    ObjectDetector, load_manifest = (
         notebook.ObjectDetector,
-        notebook.load_and_validate_manifest,
+        notebook.load_manifest,
     )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--size", type=int, default=128)
@@ -97,7 +97,7 @@ def main():
             ),
             encoding="utf-8",
         )
-        rows = load_and_validate_manifest(manifest)
+        rows = load_manifest(manifest)
         config = default_training_configuration(ROOT)
         config.update(
             output=str(folder / "run"),
@@ -111,7 +111,7 @@ def main():
             save_every=1,
             amp=args.amp,
         )
-        assert run_training_preflight(config, rows).ready.all()
+        validate_training_inputs(config, rows)
         assert len(create_training_data_partitions(rows)["detector_train"]) == 2
         assert (
             len(create_training_data_partitions(rows)["test"]) == 1
