@@ -10,7 +10,10 @@ MAX_WORKFLOW_STATEMENTS = 5
 MAX_DEFINITION_SECTIONS = 13
 ORCHESTRATION_FUNCTIONS = {
     "resolve_study_configuration",
-    "train_detector_profile",
+    "prepare_detector_study",
+    "train_and_validate_detector",
+    "load_study_manifest",
+    "load_labeled_clear_fog_data",
     "run_saved_fog_comparison",
     "run_configured_detector_study",
     "run_comparison_matrix",
@@ -23,7 +26,6 @@ ORCHESTRATION_FUNCTIONS = {
     "validate_matched_evaluation",
     "validate_study_settings",
     "apply_subset_execution_settings",
-    "verify_subset_completion_and_checkpoint_reuse",
 }
 
 
@@ -82,9 +84,7 @@ def main():
                 isinstance(node, (ast.FunctionDef, ast.ClassDef)) for node in tree.body
             ), f"workflow cell {index} should call named steps"
     assert len(helper_cells) <= MAX_DEFINITION_SECTIONS
-    step_validators = {
-        name for name in definitions if name.startswith("validate_")
-    }
+    step_validators = {name for name in definitions if name.startswith("validate_")}
     assert step_validators == {
         "validate_training_inputs",
         "validate_study_settings",
@@ -93,12 +93,12 @@ def main():
         "validate_and_extract_full_dataset_archive",
     }
     assert not any(
-        name.startswith("require_") or name == "readiness_check"
-        for name in definitions
+        name.startswith("require_") or name == "readiness_check" for name in definitions
     )
     assert "_legacy_adapter_experiment" not in definitions
     assert "resolve_density_predictor_checkpoint" in definitions
     assert "load_fog_density_model" in definitions
+    code = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
     setup_heading = next(
         index
         for index, cell in enumerate(notebook.cells)
@@ -106,23 +106,49 @@ def main():
         and cell.source.startswith("### Fit or resume the fog-density model")
     )
     predictor_workflow = notebook.cells[setup_heading + 1].source
-    assert "get_fog_model_training_data(rows)" in predictor_workflow
+    assert "get_fog_model_training_data(fog_density_rows)" in code
     assert "fit_fog_density_model(" in predictor_workflow
     assert "ARM_DENSITY" not in predictor_workflow
-    code = "\n".join(
-        cell.source for cell in notebook.cells if cell.cell_type == "code"
-    )
-    assert "train_detector_profile(" in code
-    assert "TRAINING_CONFIGURATION, rows, fog_predictor" in code
+    code = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
+    assert "train_detector_profile" not in definitions
+    assert "prepare_detector_study(" in code
+    assert "nuscenes_partitions = prepare_detector_study(" in code
     detector_heading = next(
-        cell.source for cell in notebook.cells
+        cell.source
+        for cell in notebook.cells
         if cell.cell_type == "markdown" and cell.source.startswith("## 5.")
     )
     assert all(name in detector_heading for name in ("YOLO11n", "YOLO11m", "DETR"))
-    assert "RGB only" in detector_heading and "fog-density estimate" in detector_heading
-    assert "run_saved_fog_comparison()" in "\n".join(
-        cell.source for cell in notebook.cells if cell.cell_type == "code"
+    assert (
+        "RGB only" in detector_heading
+        and "predicted fog-density value" in detector_heading
     )
+    training_calls = []
+    for cell in notebook.cells:
+        if cell.cell_type != "code":
+            continue
+        tree = ast.parse(cell.source)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and ast.unparse(node.func) == "train_and_validate_detector"
+            ):
+                training_calls.append(
+                    (ast.unparse(node.args[4]), ast.unparse(node.args[5]))
+                )
+    assert training_calls == [
+        (model, arm)
+        for model in ("YOLO_SMALL", "YOLO_MEDIUM", "DETR_MODEL")
+        for arm in ("ARM_RGB", "ARM_DENSITY")
+    ]
+    code = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
+    assert (
+        'nuscenes_data = load_study_manifest(TRAINING_CONFIGURATION["manifest"])'
+        in code
+    )
+    assert 'TRAINING_CONFIGURATION["city_manifest"]' in code
+    assert "labeled_clear_fog_data = load_labeled_clear_fog_data()" in code
+    assert "run_saved_fog_comparison(labeled_clear_fog_data)" in code
     assert 'SETTINGS["action"]' not in "\n".join(cell.source for cell in notebook.cells)
     assert "setup_fog_density_model" not in definitions
     assert "load_or_train_fog_density_model" not in definitions

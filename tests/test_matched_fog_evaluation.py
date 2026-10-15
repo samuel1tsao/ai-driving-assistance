@@ -329,7 +329,8 @@ class MatchedFogEvaluation(unittest.TestCase):
         notebook = nbformat.read(ROOT / "notebooks/fog_density_study.ipynb", 4)
         self.assertTrue(
             any(
-                cell.cell_type == "code" and "run_saved_fog_comparison()" in cell.source
+                cell.cell_type == "code"
+                and "run_saved_fog_comparison(labeled_clear_fog_data)" in cell.source
                 for cell in notebook.cells
             )
         )
@@ -365,7 +366,8 @@ class MatchedFogEvaluation(unittest.TestCase):
             patch.object(training, "FogAdapter", FixtureAdapter),
             patch.object(training, "FogDensityRegressor", FixtureDensity),
         ):
-            results, status = training.run_saved_fog_comparison()
+            labeled_clear_fog_data = training.load_labeled_clear_fog_data()
+            results, status = training.run_saved_fog_comparison(labeled_clear_fog_data)
         self.assertEqual(loaded[0], (source / "density-42" / "best.pt", "cpu"))
         self.assertEqual(len(status), 6)
         self.assertFalse(results.empty)

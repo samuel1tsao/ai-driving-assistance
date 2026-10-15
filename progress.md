@@ -171,6 +171,36 @@ Goal: simplify the single notebook's run lifecycle. Always stage/validate data; 
 | DONE | Replace action/arm skip routing in the visible workflow with simple data, predictor, and detector steps | `notebooks/fog_density_consolidated.ipynb` | Visible order is load/validate data, load or train/save the beta predictor, then resume or train all configured detector/model arms. |
 | DONE | Make matched fog/clear analysis independently runnable and reuse in-memory models or restore saved ones | Notebook evaluation and analysis cells | Dedicated analysis call resolves saved checkpoints when needed and displays tables and figures without requiring the training cell in the current kernel. |
 | DONE | Positive and negative lifecycle checks | `tests/`, notebook checker | Unit coverage includes missing/saved density predictors, full and incomplete detector profiles, completed checkpoint reuse, and saved-model comparison loading. |
-| DONE | Performance/load and idempotency/concurrency checks | `tests/`, notebook smoke checks | The 41-test suite and notebook/Colab/research checks pass. ZIP end-to-end smoke completed bounded training, validation, reports, and export. Its local fixture skips matched Cityscapes because it contains no labeled Foggy Cityscapes data; standalone matched analysis is covered by its unit test. |
+| DONE | Performance/load and idempotency/concurrency checks | `tests/`, notebook smoke checks | The 41-test suite and notebook/Colab/research checks pass. Directory-mode bounded smoke completed YOLO11n training, validation, reports, and export; ZIP mode was not run because it would extract the full 52.9 GB archive. Its local fixture skips matched Cityscapes because it contains no labeled Foggy Cityscapes data; standalone matched analysis is covered by its unit test. |
 
 Repository notebook guidance takes precedence over the implementation skill's 250-character function limit. The user's explicit readability request favors a short visible flow and focused helpers; the established notebook standard targets 40 logical lines and rejects extra abstraction layers. Verification passed: `.venv/Scripts/python.exe -m unittest discover -s tests -v` (41 tests), `scripts/check_notebook_code.py`, `scripts/check_colab.py`, `scripts/check_fog_research.py`, and bounded ZIP run `scripts/check_consolidated_notebook.py --zip --images 2`. The local checker skips only the matched Cityscapes analysis cell because this bounded fixture contains nuScenes but no labeled Foggy Cityscapes; fixture-backed standalone analysis passes `test_standalone_notebook_cell_loads_saved_models_and_runs_analysis`. The temp directory must be pointed inside `.runtime` in this sandbox.
+## Explicit experiment flow
+
+Plan/source: `docs/fog-notebook-visible-workflow-implementation-plan.md`; research contract: `docs/fog-density-research-plan.md`.
+
+Goal: make the visible notebook name nuScenes, Foggy Cityscapes density-training data, each detector model/arm, and each validation target. Preserve one notebook, existing run identities/checkpoints, profile selection, matched clear/fog analysis, and A100 optimizations. User direction: no extra support files, no six trivial wrappers, and no helper validation sprawl; prefer a clear visible sequence with shared training mechanics underneath.
+
+| Status | Work item | Files | Acceptance / verification |
+|---|---|---|---|
+| DONE | Inspect current dataset/run identity contracts; expose separately named nuScenes and Foggy Cityscapes inputs | `notebooks/fog_density_study.ipynb` | Predictor rows load separately; existing fingerprint row selection and stable timestamps are preserved. |
+| DONE | Expose all six detector/arm training calls and named per-model validation results | notebook | Each call selects one model and arm through shared locked checkpoint mechanics; no duplicated wrappers. |
+| DONE | Make matched clear/fog analysis explicitly load its labeled dataset independently | notebook | A dedicated loader returns matched `gtFine` rows; the analysis cell passes them to saved-model evaluation. |
+| DONE | Positive and negative behavior tests | `tests/`, `scripts/check_notebook_readability.py` | Exact visible ordering/models/arms; invalid or missing labeled evaluation data errors at the corresponding step. |
+| DONE | Performance and output consistency | `scripts/check_consolidated_notebook.py`, tests | Bounded run finishes; profile budgets, fingerprints, output columns and checkpoint reuse remain unchanged. |
+| DONE | Concurrency and recovery | tests | Repeated per-comparison calls preserve run locking, interrupted resume, completed reuse and separate analysis idempotency. |
+| DONE | Standard review and publish | README, plan, notebook, Drive | Run full suite/checks, inspect final diff, push and sync the existing Drive notebook/bundle. |
+
+Coding-standard resolution: retain the repository's focused-helper/40-line guidance. The implementation skill reference's 250-character total-function rule would force the wrapper proliferation the user has explicitly rejected; keep cohesive short functions and document any justified existing-function exceptions here rather than splitting for character count alone.
+
+
+### Explicit experiment flow implementation (2026-10-14)
+
+| Status | Work item | Verification |
+|---|---|---|
+| DONE | Load nuScenes detector rows and Foggy Cityscapes beta-training rows separately; retain run fingerprints and shared preparation | Notebook readability guard and full suite |
+| DONE | Show six explicit YOLO11n, YOLO11m, and DETR calls for RGB-only and predicted-density arms, each with named results | Exact call-order check; bounded directory-mode smoke trained and validated both configured YOLO11n arms |
+| DONE | Load labeled matched clear/fog Cityscapes data in its own analysis cell | Matched fog evaluation tests |
+| DONE | Verify positive/negative behavior, profile/output consistency, lock contention, and recovery | 47 unit tests; notebook, Colab, and research checks |
+| PENDING | Push to GitHub | The implementation commit is local; automatic review requires user approval for the configured origin |
+
+The ZIP-mode smoke was not run because its fixture requires extracting the full 52.9 GB dataset. Directory-mode bounded smoke exercised training, validation, reporting, and export. The notebook and code bundle were synced in place to Drive and verified in the target folder. The implementation commit is local; the external Git push is pending approval after the automatic review rejection.

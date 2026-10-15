@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from filelock import FileLock, Timeout
 import nbformat
 import pandas as pd
 import torch
@@ -80,7 +81,7 @@ class ProfileContinuation(unittest.TestCase):
         )
         return recorded, paths["run"]
 
-    def test_finished_run_loads_data_and_profile_runner_reuses_checkpoints(self):
+    def test_finished_profile_prepares_once_and_reuses_selected_checkpoints(self):
         recorded, output = self.existing_run(True)
         configuration, paths = workflow.resolve_study_configuration(
             copy.deepcopy(self.settings)
@@ -88,41 +89,45 @@ class ProfileContinuation(unittest.TestCase):
         self.assertEqual(configuration, recorded)
         self.assertEqual(workflow.SETTINGS["profile"]["density_sampling"], "natural")
         rows = [{"id": "loaded"}]
+        partitions = {"detector_train": [], "val": [], "evaluation": []}
         with (
             patch.object(
-                workflow, "find_or_download_dataset_archive", return_value=paths["archive"]
+                workflow,
+                "find_or_download_dataset_archive",
+                return_value=paths["archive"],
             ) as archive,
-            patch.object(workflow, "validate_and_extract_full_dataset_archive") as extract,
+            patch.object(
+                workflow, "validate_and_extract_full_dataset_archive"
+            ) as extract,
             patch.object(workflow, "verify_prepared_manifest_files") as verify,
+            patch.object(workflow, "validate_training_inputs"),
             patch.object(
-                workflow, "load_study_data", return_value=rows
+                workflow, "create_training_data_partitions", return_value=partitions
             ),
-            patch.object(workflow, "display_dataset_split_summary"),
+            patch.object(workflow, "clear_setup_output_if_requested"),
+            patch.object(workflow, "validate_and_record_run_identity"),
             patch.object(
                 workflow,
-                "validate_training_inputs",
-                return_value=pd.DataFrame([{"ready": True}]),
-            ),
-            patch.object(
-                workflow,
-                "run_configured_detector_study",
-                return_value=(
-                    pd.DataFrame([{"mAP50_95": 0.5}]),
-                    pd.DataFrame([{"status": "complete"}]),
-                ),
-            ) as runner,
-            patch.object(workflow, "display"),
+                "run_comparison_matrix",
+                return_value=[{"status": "complete"}],
+            ) as train,
         ):
             workflow.prepare_fog_data()
-            annotations = workflow.load_study_data(configuration)
-            results, status = workflow.train_detector_profile(
-                configuration, annotations, None
+            prepared = workflow.prepare_detector_study(rows, rows, configuration)
+            status = workflow.train_and_validate_detector(
+                prepared,
+                rows,
+                configuration,
+                None,
+                workflow.YOLO_SMALL,
+                workflow.ARM_RGB,
             )
         archive.assert_called_once()
         extract.assert_called_once_with(paths["archive"])
         verify.assert_called_once()
-        runner.assert_called_once_with(rows, recorded, None)
-        self.assertFalse(results.empty)
+        self.assertEqual(train.call_args.kwargs["selected_model"], workflow.YOLO_SMALL)
+        self.assertEqual(train.call_args.kwargs["selected_arm"], workflow.ARM_RGB)
+        self.assertIs(prepared, partitions)
         self.assertEqual(status.iloc[0]["status"], "complete")
         self.assertEqual(paths["run"], output)
         self.assertEqual(
@@ -137,7 +142,9 @@ class ProfileContinuation(unittest.TestCase):
                 "find_or_download_dataset_archive",
                 return_value=Path("dataset.zip"),
             ) as archive,
-            patch.object(workflow, "validate_and_extract_full_dataset_archive") as extract,
+            patch.object(
+                workflow, "validate_and_extract_full_dataset_archive"
+            ) as extract,
             patch.object(workflow, "verify_prepared_manifest_files") as verify,
         ):
             for profile in workflow.PROFILE_NAMES:
@@ -173,15 +180,40 @@ class ProfileContinuation(unittest.TestCase):
         self.assertEqual(configuration, recorded)
         self.assertFalse(workflow.should_reuse_completed_training(configuration))
         with (
-            patch.object(workflow, "validate_training_inputs"),
+            patch.object(workflow, "validate_and_record_run_identity") as identity,
             patch.object(
                 workflow,
-                "run_configured_detector_study",
-                return_value=(pd.DataFrame(), pd.DataFrame()),
+                "run_comparison_matrix",
+                return_value=[{"status": "interrupted"}],
             ) as train,
         ):
-            workflow.train_detector_profile(configuration, [], None)
-            self.assertEqual(train.call_args.args[1], recorded)
+            workflow.train_and_validate_detector(
+                {}, [], configuration, None, workflow.YOLO_SMALL, workflow.ARM_RGB
+            )
+        self.assertEqual(identity.call_args.args[1], recorded)
+        self.assertEqual(train.call_args.kwargs["selected_model"], workflow.YOLO_SMALL)
+        self.assertEqual(train.call_args.kwargs["selected_arm"], workflow.ARM_RGB)
+
+    def test_single_comparison_respects_the_run_lock(self):
+        _, output = self.existing_run(False)
+        configuration, _ = workflow.resolve_study_configuration(
+            copy.deepcopy(self.settings)
+        )
+        with (
+            FileLock(str(output / workflow.RUN_LOCK_FILE)),
+            patch.object(workflow, "validate_and_record_run_identity"),
+            patch.object(workflow, "run_comparison_matrix") as train,
+        ):
+            with self.assertRaises(Timeout):
+                workflow.train_and_validate_detector(
+                    {},
+                    [],
+                    configuration,
+                    None,
+                    workflow.YOLO_SMALL,
+                    workflow.ARM_RGB,
+                )
+        train.assert_not_called()
 
     def test_invalid_retrain_type_is_rejected_without_an_action_selector(self):
         settings = copy.deepcopy(self.settings)
@@ -353,16 +385,25 @@ class FrozenPredictorSetup(unittest.TestCase):
         torch.save(checkpoint, last_path)
         config = {**self.config, "density_epochs": 2, "density_sampling": "natural"}
         with patch.object(
-            workflow, "train_one_density_epoch", side_effect=AssertionError("already complete")
+            workflow,
+            "train_one_density_epoch",
+            side_effect=AssertionError("already complete"),
         ):
             restored = workflow.fit_fog_density_model(
-                {"density_train": [{"dataset": "foggy_cityscapes", "group": "train-a"}], "density_val": []},
+                {
+                    "density_train": [
+                        {"dataset": "foggy_cityscapes", "group": "train-a"}
+                    ],
+                    "density_val": [],
+                },
                 config,
                 best_path,
                 42,
             )
         self.assertFalse(restored.training)
-        self.assertTrue(all(not parameter.requires_grad for parameter in restored.parameters()))
+        self.assertTrue(
+            all(not parameter.requires_grad for parameter in restored.parameters())
+        )
         for key, tensor in model.state_dict().items():
             torch.testing.assert_close(tensor, restored.state_dict()[key])
 

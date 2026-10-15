@@ -11,6 +11,35 @@ from IPython.utils.capture import capture_output
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def create_fixture_density_checkpoint(shell, runtime):
+    import torch
+
+    checkpoint_path = runtime / "synthetic-density-predictor.pt"
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    configuration = shell.user_ns["TRAINING_CONFIGURATION"]
+    torch.manual_seed(42)
+    torch.save(
+        {
+            "kind": "fog-density-v1",
+            "beta_scale": shell.user_ns["BETA_SCALE"],
+            "train_groups": [["nuscenes", "fixture-held-out"]],
+            "planned_epochs": configuration["density_epochs"],
+            "density_sampling": "natural",
+            "seed": 42,
+            "epoch": configuration["density_epochs"],
+            "step": 0,
+            "best_loss": 0.0,
+            "running_sum": 0.0,
+            "running_count": 0,
+            "history": [],
+            "model": shell.user_ns["FogDensityRegressor"]().state_dict(),
+        },
+        checkpoint_path,
+    )
+    shell.user_ns["SETTINGS"]["density_predictor"]["checkpoint"] = str(checkpoint_path)
+    configuration["density_checkpoint"] = str(checkpoint_path)
+
+
 def main():
     print("Loading and validating notebook", flush=True)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -98,45 +127,35 @@ def main():
         for index, cell in enumerate(notebook.cells):
             if cell.cell_type != "code":
                 continue
+            if cell.source.strip() == "prepare_fog_data()":
+                create_fixture_density_checkpoint(shell, runtime)
+            training_call = next(
+                (
+                    node
+                    for node in ast.walk(ast.parse(cell.source))
+                    if isinstance(node, ast.Call)
+                    and ast.unparse(node.func) == "train_and_validate_detector"
+                ),
+                None,
+            )
+            if training_call and shell.user_ns["SETTINGS"]["test"]["enabled"]:
+                model_name = shell.user_ns[ast.unparse(training_call.args[4])]
+                if (
+                    model_name
+                    not in shell.user_ns["TRAINING_CONFIGURATION"]["checkpoints"]
+                ):
+                    message = (
+                        f"Local smoke test skips unconfigured model: {model_name}.\n"
+                    )
+                    cell.execution_count = execution_count + 1
+                    cell.outputs = [
+                        nbformat.v4.new_output("stream", name="stdout", text=message)
+                    ]
+                    print(message, flush=True)
+                    execution_count += 1
+                    continue
             if (
-                "resolve_density_predictor_checkpoint(TRAINING_CONFIGURATION)"
-                in cell.source
-            ):
-                import torch
-
-                fixture_checkpoint = runtime / "synthetic-density-predictor.pt"
-                fixture_checkpoint.parent.mkdir(parents=True, exist_ok=True)
-                torch.manual_seed(42)
-                torch.save(
-                    {
-                        "kind": "fog-density-v1",
-                        "beta_scale": shell.user_ns["BETA_SCALE"],
-                        "train_groups": [["nuscenes", "fixture-held-out"]],
-                        "planned_epochs": shell.user_ns["TRAINING_CONFIGURATION"][
-                            "density_epochs"
-                        ],
-                        "density_sampling": "natural",
-                        "seed": 42,
-                        "epoch": shell.user_ns["TRAINING_CONFIGURATION"][
-                            "density_epochs"
-                        ],
-                        "step": 0,
-                        "best_loss": 0.0,
-                        "running_sum": 0.0,
-                        "running_count": 0,
-                        "history": [],
-                        "model": shell.user_ns["FogDensityRegressor"]().state_dict(),
-                    },
-                    fixture_checkpoint,
-                )
-                shell.user_ns["SETTINGS"]["density_predictor"]["checkpoint"] = str(
-                    fixture_checkpoint
-                )
-                shell.user_ns["TRAINING_CONFIGURATION"]["density_checkpoint"] = str(
-                    fixture_checkpoint
-                )
-            if (
-                "fog_results, fog_status = run_saved_fog_comparison()" in cell.source
+                "run_saved_fog_comparison(labeled_clear_fog_data)" in cell.source
                 and shell.user_ns["SETTINGS"]["test"]["enabled"]
             ):
                 message = (
