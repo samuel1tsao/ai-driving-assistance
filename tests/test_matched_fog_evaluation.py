@@ -95,6 +95,96 @@ class MatchedFogEvaluation(unittest.TestCase):
             )
         )
 
+    def test_labeled_fog_pairs_feed_detector_rows_without_split_leakage(self):
+        root = self.root / "training-cityscapes"
+        fog_rows = []
+        samples = (
+            ("train", "aachen", "aachen_000000_000001", "density_train"),
+            ("train", "aachen", "aachen_000001_000001", "val"),
+            ("val", "frankfurt", "frankfurt_000000_000001", "test"),
+        )
+        for source_split, city, base, assigned_split in samples:
+            for beta in (0.005, 0.01, 0.02):
+                fog_image = (
+                    self.root
+                    / "leftImg8bit_foggy"
+                    / source_split
+                    / city
+                    / f"{base}_leftImg8bit_foggy_beta_{beta}.png"
+                )
+                fog_image.parent.mkdir(parents=True, exist_ok=True)
+                Image.new("RGB", (32, 32), "gray").save(fog_image)
+                mask = np.zeros((32, 32), dtype=np.uint16)
+                mask[5:17, 4:14] = 26001
+                mask_path = (
+                    root
+                    / "gtFine"
+                    / source_split
+                    / city
+                    / f"{base}_gtFine_instanceIds.png"
+                )
+                mask_path.parent.mkdir(parents=True, exist_ok=True)
+                Image.fromarray(mask).save(mask_path)
+            clear_image = (
+                root / "leftImg8bit" / source_split / city / f"{base}_leftImg8bit.png"
+            )
+            clear_image.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (32, 32), "white").save(clear_image)
+            fog_rows.extend(
+                {
+                    "id": f"city/{base}/{beta}",
+                    "image": str(
+                        self.root
+                        / "leftImg8bit_foggy"
+                        / source_split
+                        / city
+                        / f"{base}_leftImg8bit_foggy_beta_{beta}.png"
+                    ),
+                    "dataset": "foggy_cityscapes",
+                    "group": "_".join(base.split("_")[:2]),
+                    "split": assigned_split,
+                    "beta": beta,
+                    "boxes": [],
+                    "labels": [],
+                    "iscrowd": [],
+                    "width": 32,
+                    "height": 32,
+                }
+                for beta in (0.005, 0.01, 0.02)
+            )
+        config = {
+            "evaluation": {"cityscapes_root": str(root)},
+        }
+        training_configuration = {"output": str(self.root / "detector-run")}
+        with patch.dict(
+            training.__dict__,
+            {"SETTINGS": config, "TRAINING_CONFIGURATION": training_configuration},
+        ):
+            labeled = training.load_labeled_cityscapes_data(fog_rows)
+            partitions = training.create_training_data_partitions(labeled)
+        self.assertTrue(all(row["detection_labeled"] for row in labeled))
+        self.assertTrue(
+            any(row["condition"] == "clear" for row in partitions["detector_train"])
+        )
+        self.assertTrue(
+            any(row["condition"] == "foggy" for row in partitions["detector_train"])
+        )
+        self.assertEqual(
+            {
+                row["detector_split"]
+                for row in labeled
+                if row["split"] == "density_train"
+            },
+            {"detector_train"},
+        )
+        self.assertEqual(
+            {row["detector_split"] for row in labeled if row["split"] == "val"}, {"val"}
+        )
+        self.assertEqual(
+            {row["detector_split"] for row in labeled if row["split"] == "test"},
+            {"test"},
+        )
+
     def source_run(self):
         source = self.root / "training"
         source.mkdir()
@@ -344,7 +434,12 @@ class MatchedFogEvaluation(unittest.TestCase):
             },
             "density_predictor": {"seed": 42},
         }
-        training_configuration = {"output": str(source), "device": "cpu", "amp": False}
+        training_configuration = {
+            "output": str(source),
+            "city_manifest": str(self.root / "city.json"),
+            "device": "cpu",
+            "amp": False,
+        }
         paths = {"output_root": self.root}
         loaded = []
         predictor = FixtureDensity()

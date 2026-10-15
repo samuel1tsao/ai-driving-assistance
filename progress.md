@@ -204,3 +204,24 @@ Coding-standard resolution: retain the repository's focused-helper/40-line guida
 | PENDING | Push to GitHub | The implementation commit is local; automatic review requires user approval for the configured origin |
 
 The ZIP-mode smoke was not run because its fixture requires extracting the full 52.9 GB dataset. Directory-mode bounded smoke exercised training, validation, reporting, and export. The notebook and code bundle were synced in place to Drive and verified in the target folder. The implementation commit is local; the external Git push is pending approval after the automatic review rejection.
+
+### Add labeled fog examples to detector training (2026-10-15)
+
+The prior visible workflow trained the density predictor on Foggy Cityscapes but trained all six detectors on nuScenes only. Detector input now combines nuScenes with matched clear/fog Cityscapes images and `gtFine` boxes. Each detector arm sees the same images and labels; the density arm additionally receives the frozen beta estimate. Cityscapes groups reuse the beta predictor's split so predictor training groups remain in detector training, with separate held-out validation and test groups. Partial image caps are divided evenly across nuScenes and Cityscapes.
+
+| Status | Work item | Verification |
+|---|---|---|
+| DONE | Reuse the existing labeled clear/fog data loader for detector training and held-out analysis | Shared-manifest fixture and standalone saved-model analysis pass |
+| DONE | Preserve held-out scene splits and require labels for detector training | Fixture test checks boxes, matched pairs, and train/validation/test group mapping |
+| DONE | Ensure partial caps include both input datasets | Profile test confirms equal dataset quotas and fog rows in detector training |
+| PENDING | Confirm the configured Cityscapes root contains `gtFine/` and `leftImg8bit/` | The notebook already uses this root for matched evaluation; the Foggy Cityscapes beta bundle itself omits these files |
+| DONE | Rerun checks and publish the revised notebook/bundle/guide to Drive | Full suite and bounded smoke pass; all three artifacts updated and verified in the target folder |
+| PENDING | Commit and push the follow-up | Local `.git` is read-only in this workspace (`index.lock` permission denied); the earlier GitHub push was rejected by automatic review pending explicit user approval |
+
+
+The labeled Cityscapes loader now has one shared entry point. Training passes in the already loaded beta manifest and receives all labeled rows; the independently runnable analysis cell loads the same manifest and filters to the configured held-out split. This preserves scene-level separation while eliminating the second, separately generated matched manifest.
+
+Verification note: the full 49-test suite, notebook format/schema/readability/Colab checks, fog research checks, and bounded directory-mode notebook smoke pass. The smoke trains and validates configured YOLO11n arms on a synthetic labeled Cityscapes fixture. Drive search confirms the configured `fog-study` folder does not yet contain the `cityscapes-labeled` root; Colab training therefore requires that external Cityscapes data to be placed there.
+
+
+Drive publication for the labeled-fog training update completed 2026-10-15: `fog_density_study.ipynb`, `fog-colab-code.zip`, and `colab-guide.md` were updated in place and verified by matching Drive sizes/timestamps. GitHub push remains blocked by the earlier auto-review requirement for authorization. The configured Drive folder still lacks `cityscapes-labeled`; training cannot use labeled fog examples until the official `gtFine/` and clear Cityscapes files are added there.

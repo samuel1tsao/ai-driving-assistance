@@ -11,8 +11,11 @@ MAX_DEFINITION_SECTIONS = 13
 ORCHESTRATION_FUNCTIONS = {
     "resolve_study_configuration",
     "prepare_detector_study",
+    "select_profile_training_rows",
+    "select_scene_safe_rows",
     "train_and_validate_detector",
     "load_study_manifest",
+    "load_labeled_cityscapes_data",
     "load_labeled_clear_fog_data",
     "run_saved_fog_comparison",
     "run_configured_detector_study",
@@ -112,7 +115,9 @@ def main():
     code = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
     assert "train_detector_profile" not in definitions
     assert "prepare_detector_study(" in code
-    assert "nuscenes_partitions = prepare_detector_study(" in code
+    assert "labeled_cityscapes_data = load_labeled_cityscapes_data(" in code
+    assert "run_identity_rows = nuscenes_data + labeled_cityscapes_data" in code
+    assert "detector_partitions = prepare_detector_study(" in code
     detector_heading = next(
         cell.source
         for cell in notebook.cells
@@ -134,10 +139,14 @@ def main():
                 and ast.unparse(node.func) == "train_and_validate_detector"
             ):
                 training_calls.append(
-                    (ast.unparse(node.args[4]), ast.unparse(node.args[5]))
+                    (
+                        ast.unparse(node.args[0]),
+                        ast.unparse(node.args[4]),
+                        ast.unparse(node.args[5]),
+                    )
                 )
     assert training_calls == [
-        (model, arm)
+        ("detector_partitions", model, arm)
         for model in ("YOLO_SMALL", "YOLO_MEDIUM", "DETR_MODEL")
         for arm in ("ARM_RGB", "ARM_DENSITY")
     ]
@@ -147,7 +156,10 @@ def main():
         in code
     )
     assert 'TRAINING_CONFIGURATION["city_manifest"]' in code
+    assert '"gtFine"' in code
+    assert '"detector_split"' in code
     assert "labeled_clear_fog_data = load_labeled_clear_fog_data()" in code
+    assert "rows = load_labeled_cityscapes_data()" in code
     assert "run_saved_fog_comparison(labeled_clear_fog_data)" in code
     assert 'SETTINGS["action"]' not in "\n".join(cell.source for cell in notebook.cells)
     assert "setup_fog_density_model" not in definitions

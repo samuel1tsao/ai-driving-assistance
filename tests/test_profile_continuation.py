@@ -215,6 +215,46 @@ class ProfileContinuation(unittest.TestCase):
                 )
         train.assert_not_called()
 
+    def test_foggy_cityscapes_labels_reach_detector_training_and_partial_caps(self):
+        rows = []
+        for dataset, source_split, detector_split in (
+            ("nuscenes", "detector_train", "detector_train"),
+            ("foggy_cityscapes", "density_train", "detector_train"),
+        ):
+            for index in range(10):
+                rows.append(
+                    {
+                        "id": f"{dataset}/{index}",
+                        "dataset": dataset,
+                        "group": f"{dataset}-scene-{index}",
+                        "split": source_split,
+                        "detector_split": detector_split,
+                        "beta": 0.01 if dataset == "foggy_cityscapes" else None,
+                        "detection_labeled": True,
+                        "boxes": [[0, 0, 1, 1]],
+                        "labels": [1],
+                        "iscrowd": [0],
+                    }
+                )
+        selected = workflow.select_profile_training_rows(
+            rows, workflow.PROFILE_2K, 42, training_image_cap=8
+        )
+        selected_by_dataset = {
+            dataset: sum(
+                row["dataset"] == dataset and row["detector_split"] == "detector_train"
+                for row in selected
+            )
+            for dataset in ("nuscenes", "foggy_cityscapes")
+        }
+        self.assertEqual(selected_by_dataset, {"nuscenes": 4, "foggy_cityscapes": 4})
+        parts = workflow.create_training_data_partitions(rows)
+        self.assertTrue(
+            any(row["dataset"] == "foggy_cityscapes" for row in parts["detector_train"])
+        )
+        self.assertTrue(
+            any(row["dataset"] == "foggy_cityscapes" for row in parts["density_train"])
+        )
+
     def test_invalid_retrain_type_is_rejected_without_an_action_selector(self):
         settings = copy.deepcopy(self.settings)
         settings["retrain"] = "yes"

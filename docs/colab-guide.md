@@ -23,11 +23,9 @@ Each partial profile starts independently; partial-5k does not continue partial-
 
 Checkpoints preserve detector/adapter weights, optimizer, AMP scaler, random state, and cumulative loss history. One writer per run and atomic saves protect interrupted work. Changed inputs or incompatible settings/packages cannot silently mix experiments. A presentation-only notebook refactor does not require retraining compatible weights.
 
-## Matched clear/fog evaluation
+## Labeled Cityscapes data and analysis
 
-Choose the source training profile and set `action="evaluate"`. `evaluation.source_run=""` uses its saved run; an absolute path selects another. Match that experiment's models, seeds, and image size.
-
-The evaluation root needs:
+Detector training and the separate analysis cell both use one labeled Cityscapes manifest. Set `SETTINGS["evaluation"]["cityscapes_root"]` to a folder containing the official Cityscapes clear images, Foggy Cityscapes images, and `gtFine` instance masks:
 
 ```text
 cityscapes-labeled/
@@ -36,9 +34,9 @@ cityscapes-labeled/
   gtFine/val/<city>/*_gtFine_instanceIds.png
 ```
 
-Every scene needs clear, beta .005, .01, and .02 views with shared bounding-box labels from the instance mask. The fog-image archive alone lacks those labels. `max_pairs=100` selects 100 complete scene groups (400 images); `None` uses all available scenes. Missing variants/labels or fitting-scene overlap stops evaluation.
+Each scene needs clear plus beta .005, .01, and .02 fog views with bounding boxes extracted from its instance mask. The data ZIP contains the fog images and beta labels, but not the Cityscapes `gtFine` masks or clear images. Keep this labeled root available in Drive before running training. The detector training step uses labeled training scenes; the independent analysis cell selects only `evaluation.split` from the same manifest.
 
-New predictions, tables, figures, and export ZIP go to `evaluation.output_name`; source weights stay intact. Evaluation loads that source experiment's density estimator. Compare fog-minus-control and clear-minus-control deltas for each model and training seed. One seed is exploratory; correlated fog variants are not independent experimental repeats. Unknown-beta nuScenes results are a separate normal-use benchmark, not verified clear performance.
+Set `evaluation.source_run=""` to use the selected profile's saved run, or provide another run path. `max_pairs=100` selects 100 complete held-out scene groups (400 images); `None` uses all available scenes. Predictions, tables, figures, and export ZIP go to `evaluation.output_name`; source weights stay intact. Compare fog-minus-control and clear-minus-control deltas for each model and training seed. One seed is exploratory; correlated fog variants are not independent experimental repeats. Unknown-beta nuScenes results are a separate normal-use benchmark, not verified clear performance.
 
 For a visual record, save a notebook copy with outputs after running. CSVs and PNGs persist in the run even if cell outputs are cleared. `analyze` redraws them without another training run.
 

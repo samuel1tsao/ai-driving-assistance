@@ -40,6 +40,36 @@ def create_fixture_density_checkpoint(shell, runtime):
     configuration["density_checkpoint"] = str(checkpoint_path)
 
 
+def create_fixture_cityscapes_data(shell, runtime):
+    import numpy as np
+    from PIL import Image
+
+    original_rows = shell.user_ns["fog_density_rows"]
+    first_base_by_split = {}
+    for row in sorted(original_rows, key=lambda value: value["id"]):
+        first_base_by_split.setdefault(row["split"], row["id"].split("/")[1])
+    selected_bases = set(first_base_by_split.values())
+    rows = [row for row in original_rows if row["id"].split("/")[1] in selected_bases]
+    root = runtime / "cityscapes-labeled-fixture"
+    for row in rows:
+        image = Path(row["image"])
+        split, city = image.parents[1].name, image.parent.name
+        base = row["id"].split("/")[1]
+        with Image.open(image) as source:
+            width, height = source.size
+        mask_path = root / "gtFine" / split / city / f"{base}_gtFine_instanceIds.png"
+        clear_path = root / "leftImg8bit" / split / city / f"{base}_leftImg8bit.png"
+        if not mask_path.exists():
+            mask_path.parent.mkdir(parents=True, exist_ok=True)
+            mask = np.zeros((height, width), dtype=np.uint16)
+            mask[2:8, 2:8] = 26001
+            Image.fromarray(mask).save(mask_path)
+            clear_path.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (width, height), "gray").save(clear_path)
+    shell.user_ns["fog_density_rows"] = rows
+    shell.user_ns["SETTINGS"]["evaluation"]["cityscapes_root"] = str(root)
+
+
 def main():
     print("Loading and validating notebook", flush=True)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -91,6 +121,11 @@ def main():
     )
     settings.source += 'SETTINGS["output"]["run_name"] = "checkpoint-refactor-zip-validation" if SETTINGS["data"]["mode"] == "zip" else "checkpoint-refactor-directory-validation"\n'
     settings.source += 'SETTINGS["output"]["export_name"] = SETTINGS["output"]["run_name"] + "-results"\n'
+    settings.source += (
+        'SETTINGS["evaluation"]["cityscapes_root"] = '
+        + repr(str(runtime / "cityscapes-labeled-fixture"))
+        + "\n"
+    )
     settings.source += (
         'SETTINGS["test"]["images_per_stratum"] = ' + repr(args.images) + "\n"
     )
@@ -155,13 +190,22 @@ def main():
                     execution_count += 1
                     continue
             if (
+                "labeled_clear_fog_data = load_labeled_clear_fog_data()" in cell.source
+                and shell.user_ns["SETTINGS"]["test"]["enabled"]
+            ):
+                message = "Local smoke test skips the separate matched clear/fog report cell.\n"
+                cell.execution_count = execution_count + 1
+                cell.outputs = [
+                    nbformat.v4.new_output("stream", name="stdout", text=message)
+                ]
+                print(message, flush=True)
+                execution_count += 1
+                continue
+            if (
                 "run_saved_fog_comparison(labeled_clear_fog_data)" in cell.source
                 and shell.user_ns["SETTINGS"]["test"]["enabled"]
             ):
-                message = (
-                    "Local smoke test skips matched Cityscapes analysis: "
-                    "the bounded fixture contains nuScenes only.\n"
-                )
+                message = "Local smoke test skips the separate matched clear/fog report cell.\n"
                 cell.execution_count = execution_count + 1
                 cell.outputs = [
                     nbformat.v4.new_output("stream", name="stdout", text=message)
@@ -173,6 +217,8 @@ def main():
             execution_count += 1
             with capture_output() as captured:
                 result = shell.run_cell(cell.source, store_history=True)
+                if cell.source.strip().startswith("fog_density_rows = load_study_manifest("):
+                    create_fixture_cityscapes_data(shell, runtime)
             cell.execution_count = execution_count
             cell.outputs = []
             for name, value in (
@@ -200,7 +246,7 @@ def main():
         nbformat.write(notebook, executed)
         print(f"Executed notebook: {executed}", flush=True)
     print(
-        "PASS: bounded detector training, validation, reports and checkpoint export completed; matched Cityscapes analysis is covered by its standalone unit test.",
+        "PASS: bounded nuScenes and Cityscapes detector training, validation, reports and checkpoint export completed; the separate matched analysis is covered by its standalone unit test.",
         flush=True,
     )
 
