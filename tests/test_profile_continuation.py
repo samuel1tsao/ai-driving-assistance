@@ -134,6 +134,24 @@ class ProfileContinuation(unittest.TestCase):
             json.loads((output / "settings.json").read_text())["config"], recorded
         )
 
+    def test_partial_profile_uses_shared_extracted_data_root(self):
+        configuration, paths = workflow.resolve_study_configuration(
+            copy.deepcopy(self.settings)
+        )
+        data_root = Path(self.settings["runtime_root"])
+        self.assertEqual(paths["data_root"], data_root)
+        self.assertEqual(
+            Path(configuration["manifest"]), data_root / "data/fog/nuscenes_all.json"
+        )
+        self.assertEqual(
+            Path(configuration["city_manifest"]), data_root / "data/fog/cityscapes.json"
+        )
+        for manifest in (configuration["manifest"], configuration["city_manifest"]):
+            path = Path(manifest)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("[]", encoding="utf-8")
+        workflow.verify_prepared_manifest_files()
+
     def test_data_preparation_uses_same_steps_for_every_profile(self):
         workflow.resolve_study_configuration(copy.deepcopy(self.settings))
         with (

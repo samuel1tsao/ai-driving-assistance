@@ -225,3 +225,13 @@ Verification note: the full 49-test suite, notebook format/schema/readability/Co
 
 
 Drive publication for the labeled-fog training update completed 2026-10-15: `fog_density_study.ipynb`, `fog-colab-code.zip`, and `colab-guide.md` were updated in place and verified by matching Drive sizes/timestamps. GitHub push completed after user review and authorization. The configured Drive folder still lacks `cityscapes-labeled`; training cannot use labeled fog examples until the official `gtFine/` and clear Cityscapes files are added there.
+
+
+### Fix partial-profile manifest root (2026-10-15)
+
+Colab reports that `nuscenes_all.json` is missing under `/content/fog-study/profile-partial-2k/`. Profile setup incorrectly changes the prepared data root to a profile-specific directory after the archive extracts under `/content/fog-study/`. Keep the profile output/checkpoint directories independent, but make all profiles reuse the one extracted data root.
+
+| Status | Work item | Verification |
+|---|---|---|
+| DONE | Add a regression test proving partial profiles resolve and verify manifests from the shared data root | `test_partial_profile_uses_shared_extracted_data_root` passes |
+| DONE | Remove the partial-profile data-root override; rerun unit/notebook/Colab checks; update Drive and GitHub | 50 tests and notebook, format, readability, and Colab checks pass; Drive notebook and bundle updated |
