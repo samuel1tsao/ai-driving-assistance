@@ -53,12 +53,12 @@ The notebook executes in numbered sections:
 2. **Runtime setup**: mount Drive (if on Colab), set directories, and install packages.
 3. **Prepare study data**: unpack and organize datasets via `prepare_fog_data()`.
 4. **Load datasets and fit fog model**: load manifests, prepare labeled Cityscapes pairs (`prepare_cityscapes_data()`), and fit or restore the fog model (`fit_fog_density_model()`).
-5. **Train and validate detectors**: for each comparison, load or initialize the model via `load_or_create_model_file()`, train or resume it via `train_detector()`, and evaluate it via `validate_detector()`. This section also includes the optional matched clear/fog evaluation (`run_saved_fog_comparison()`).
+5. **Train and evaluate detectors**: for each comparison, load or initialize the model via `load_or_create_model_file()`, train or resume it via `train_detector()`, and evaluate it via `evaluate_detector()`. This section also includes the optional matched clear/fog evaluation (`run_saved_fog_comparison()`).
 6. **Review outputs**: compute analytics tables and display comparison charts (`generate_study_analytics()`, `display_saved_comparison_figures()`).
 7. **Export the run**: package checkpoints and reports via `export_checkpoints_and_reports()`.
 
 - **Fog model:** `fit_fog_density_model` trains on the full density split (or restores its checkpoint) and is frozen for all detector runs.
-- **Detectors:** `load_or_create_model_file` restores from `checkpoint.pt` or initializes fresh models. `train_detector` trains or reuses completed checkpoints, and `validate_detector` evaluates on the shared validation split. Profile caps apply only to detector-training rows.
+- **Detectors:** `load_or_create_model_file` restores the current resumable state from `last.pt` or initializes fresh models. `best.pt` holds the lowest held-out-loss weights observed so far; `train_detector` trains or reuses completed checkpoints, and `evaluate_detector` evaluates those best weights on the held-out split. Profile caps apply only to detector-training rows.
 - **Training defaults:** 640 px inputs, one-image micro-batches with four accumulated gradients, mixed precision on CUDA. The optional A100 throughput benchmark uses batch 64 and does not affect detector training.
 
 ## Checkpoints and resume
