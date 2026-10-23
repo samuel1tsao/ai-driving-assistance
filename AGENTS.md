@@ -15,8 +15,7 @@ Readability is a primary requirement alongside correct behavior. A reader should
 - Give each execution cell one purpose. Prefer one to five statements calling descriptive step functions.
 - `notebooks/fog_density_study.ipynb` is the single source of study implementation for local Jupyter and Colab. Keep ordinary editable Python definitions in a few purpose-labeled sections collapsed in both; visible cells call the high-level steps. Do not generate helper modules, duplicate implementation in Python files, or encode source inside strings.
 - Use one central constants/profile section for shared names, model specifications, seeds, checkpoint/report filenames, and training defaults. Keep configurable experiment settings separate from fixed contracts. Do not create constants for every dictionary key or every display/style value. Persisted schemas and dataset labels retain their original meanings.
-- `scripts/check_notebook_readability.py` checks that no support implementation exists, definitions are not duplicated, implementation sections start collapsed, visible workflow cells have at most five statements, and named orchestration functions stay short and flat.
-- Edit `notebooks/fog_density_study.ipynb` directly, then run `scripts/package_colab_notebook.py` only when refreshing the optional code bundle. Upload the same notebook file to Drive. Test and CLI tools execute its definition cells directly; they never reconstruct or import generated study modules.
+- Edit `notebooks/fog_density_study.ipynb` directly and upload the same notebook file to Drive. Never generate helper modules or a second notebook copy.
 - Explain what each step needs and produces. Separate result tables from charts and retain saved outputs in verification copies.
 - Keep setup details out of result explanations. Never label a subset execution check as a scientific result.
 
@@ -41,22 +40,10 @@ Readability is a primary requirement alongside correct behavior. A reader should
 - Reuse completed runs without retraining or rewriting training checkpoints. Repair a trailing incomplete prediction record while preserving valid earlier records.
 - A runtime termination can recover only from the latest checkpoint that finished saving. Unsaved work is replayed; a Drive output directory must remain mounted and accessible.
 
-## Required regression checks
-
-Run the inexpensive checkpoint tests before launching an expensive training workload:
-
-```powershell
-.venv/Scripts/python.exe -m unittest discover -s tests -v
-.venv/Scripts/python.exe scripts/check_notebook_code.py
-```
-
-The checkpoint tests execute the actual notebook definition cells in one shared namespace. Small CPU models test accumulated-gradient interruption, persisted-checkpoint recovery, optimizer/RNG/history parity, unchanged checkpoint payloads, completed-run reuse, incompatible-run rejection, density recovery, atomic-save failures, concurrent writers, prediction-file repair, and original pre-refactor reference results. They do not download weights or train the study models.
-
-When orchestration, data loading, or module boundaries change, also execute the real-data subset:
-
-```powershell
-.venv/Scripts/python.exe scripts/check_consolidated_notebook.py --zip --images 2
-.venv/Scripts/python.exe scripts/check_consolidated_notebook.py --images 2
-```
-
-These commands reuse the installed local dependencies and isolate test outputs. They do not start the full study. CPU tests do not prove CUDA, mixed-precision, Drive mount, or Colab timeout behavior; keep those limits explicit.
+## Verification
+ 
+Before expensive training, run the notebook with the `setup` profile
+(`TRAINING_PROFILE = PROFILE_SETUP`) to exercise data loading, all six arms,
+checkpoints and exports on a smoke subset. CPU or smoke runs do not prove CUDA,
+mixed-precision, Drive mount, or Colab timeout behavior; keep those limits
+explicit, and never present a smoke run as a scientific result.
