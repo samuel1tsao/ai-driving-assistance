@@ -1,6 +1,6 @@
 # Independent training profiles
 
-Status: implemented in the consolidated study notebook. See the [implementation plan](training-run-profiles-implementation-plan.md).
+Status: implemented in the consolidated study notebook.
 
 Each profile is an independent experiment from the original pretrained weights. Results are not cumulative model training.
 

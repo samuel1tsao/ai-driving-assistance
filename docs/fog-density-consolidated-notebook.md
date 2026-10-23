@@ -47,4 +47,4 @@ Run `python -m unittest discover -s tests -v`, `scripts/check_notebook_code.py`,
 
 Run the directory and ZIP variants of `scripts/check_consolidated_notebook.py --images 2` after changing data or orchestration. Its tiny synthetic predictor is only an integration fixture, not a research result. CPU checks do not prove Colab CUDA, Drive mount, or runtime-termination behavior.
 
-Run `scripts/package_colab_notebook.py` to refresh the optional code bundle. It packages the same single notebook used locally and in Drive; it does not create a second notebook copy. Preserve the current Drive notebook, including any outputs, before replacing its contents. See the [coding standard](coding-standards.md) and [progress record](../progress.md).
+Run `scripts/package_colab_notebook.py` to refresh the optional code bundle. It packages the same single notebook used locally and in Drive; it does not create a second notebook copy. Preserve the current Drive notebook, including any outputs, before replacing its contents.

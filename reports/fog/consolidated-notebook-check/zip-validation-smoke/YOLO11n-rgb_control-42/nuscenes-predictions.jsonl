@@ -1,2 +1,0 @@
-{"id": "nuscenes/a3b9aa548b6d4a5b9a077dba1b505e64", "prediction": [{"box": [0.0, 2.8600502014160156, 1598.3404541015625, 899.815185546875], "score": 0.0011540019186213613, "label": 0}], "beta_input": 0.0, "timings": [{"total_ms": 132.78749999881256, "density_ms": 13.579099999333266, "detector_adapter_ms": 70.7031999991159}]}
-{"id": "nuscenes/a9c6ed68ff1442baa1656ee9624fc51a", "prediction": [], "beta_input": 0.0, "timings": [{"total_ms": 137.99339999968652, "density_ms": 0.3549999964889139, "detector_adapter_ms": 81.65590000135126}]}

@@ -1,7 +1,0 @@
-,,,,mAP50_95,mAP50_95,mAP50_95,AP50,AP50,AP50,AR100,AR100,AR100,precision_at_025,precision_at_025,precision_at_025,recall_at_025,recall_at_025,recall_at_025,mean_ms,mean_ms,mean_ms,p95_ms,p95_ms,p95_ms,serial_fps,serial_fps,serial_fps
-,,,,mean,std,count,mean,std,count,mean,std,count,mean,std,count,mean,std,count,mean,std,count,mean,std,count,mean,std,count
-dataset,model,arm,density,,,,,,,,,,,,,,,,,,,,,,,,
-nuscenes,YOLO11n,predicted_density,all,0.2303244610175303,,1,0.3587930221593586,,1,0.38,,1,0.5,,1,0.4,,1,214.32005000315257,,1,247.31553500278096,,1,4.665919030838647,,1
-nuscenes,YOLO11n,predicted_density,unknown,0.2303244610175303,,1,0.3587930221593586,,1,0.38,,1,0.5,,1,0.4,,1,214.32005000315257,,1,247.31553500278096,,1,4.665919030838647,,1
-nuscenes,YOLO11n,rgb_control,all,0.2301261469430525,,1,0.3579357935793579,,1,0.38,,1,0.5,,1,0.4,,1,77.81299999987823,,1,102.31783999952312,,1,12.85132304372746,,1
-nuscenes,YOLO11n,rgb_control,unknown,0.2301261469430525,,1,0.3579357935793579,,1,0.38,,1,0.5,,1,0.4,,1,77.81299999987823,,1,102.31783999952312,,1,12.85132304372746,,1

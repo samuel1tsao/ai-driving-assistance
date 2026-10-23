@@ -1,9 +1,0 @@
-{
-  "model": "YOLO11n",
-  "arm": "predicted_density",
-  "seed": 42,
-  "epoch": 1,
-  "step": 0,
-  "best_loss": 7.3173487186431885,
-  "reason": "epoch"
-}

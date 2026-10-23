@@ -23,10 +23,10 @@ dist/
 *.log
 **/.env
 **/.env.*
-reports/fog/consolidated-notebook-check/*-executed.ipynb
 **/datasets/
 **/.cache/
 **/.venv/
 **/data/
 **/input-manifest.json
-archive/legacy-before-fog/bdd100k_labels_release/
+archive/
+reports/

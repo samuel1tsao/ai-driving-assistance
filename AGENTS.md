@@ -1,4 +1,10 @@
-# Readable notebook and Python code
+# Agent context and coding standards
+
+This file is the context for AI agents and contributors. Keep `docs/` limited to
+high-level research docs about the notebook's purpose and investigation; do not
+add implementation plans, progress logs, or handoff notes there.
+
+## Readable notebook and Python code
 
 Readability is a primary requirement alongside correct behavior. A reader should understand the study's execution from its top-level cells without opening the implementation.
 

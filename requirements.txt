@@ -1,0 +1,32 @@
+# Consolidated project dependencies.
+# torch/torchvision are left unpinned: install a GPU-compatible build first
+# (on Colab, keep the preinstalled CUDA-compatible pair).
+torch
+torchvision
+
+# Model/data APIs pinned to versions in the local research environment.
+ultralytics==8.4.155
+transformers==5.17.0
+pycocotools==2.0.11
+nuscenes-devkit==1.2.0
+kagglehub==1.0.2
+
+# Scientific / data stack
+numpy
+pandas
+scipy
+matplotlib
+pillow
+shapely
+pyquaternion
+
+# Utilities (DETR uses the official no_timm revision, so timm is not needed)
+filelock
+tqdm
+ijson
+gdown
+
+# Notebook tooling
+jupyterlab
+nbformat
+nbclient

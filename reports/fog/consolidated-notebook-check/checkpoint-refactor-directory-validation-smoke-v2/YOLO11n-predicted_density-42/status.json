@@ -1,6 +1,0 @@
-{
-  "model": "YOLO11n",
-  "arm": "predicted_density",
-  "seed": 42,
-  "status": "complete"
-}

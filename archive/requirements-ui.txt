@@ -1,2 +1,0 @@
--r requirements-deployment.txt
-streamlit>=1.45,<2

@@ -1,4 +1,0 @@
-model,status,reason
-FlashOcc,not_ready,Add prediction files under data/occupancy/predictions/occ3d_waymo/flashocc/<scene>/<frame>.npz
-OccFormer,not_ready,Add prediction files under data/occupancy/predictions/occ3d_waymo/occformer/<scene>/<frame>.npz
-GaussianOcc,not_ready,Add prediction files under data/occupancy/predictions/occ3d_waymo/gaussianocc/<scene>/<frame>.npz

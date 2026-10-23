@@ -1,4 +1,0 @@
-model,description,mode,frames,device,status,abs_rel,rmse_m,delta1,valid_pixels,mean_ms,p95_ms,images_per_second
-Depth Anything V2 Small,Small outdoor metric model; predicts camera-axis depth in meters.,metric,100,cpu,ok,0.38732151418598293,8.104546681091122,0.2296802436124631,282957,1350.808360989904,1483.2870050158815,0.7402974610456042
-Depth Anything V2 Base,Larger outdoor metric model; compare accuracy against latency.,metric,100,cpu,ok,0.38595393908399656,7.412218342060068,0.22767917776820132,282957,3323.866330999881,3720.8406099583954,0.30085445695380336
-MiDaS DPT-Hybrid,"Relative inverse-depth model; oracle-aligned diagnostic, not deployable metric distance.",relative,100,cpu,ok,0.15368618489296743,7.97648721212846,0.8025668206280615,282957,1170.726570993429,1413.8473399158102,0.8541704141484056

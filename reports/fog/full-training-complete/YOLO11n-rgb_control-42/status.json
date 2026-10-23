@@ -1,7 +1,0 @@
-{
-  "model": "YOLO11n",
-  "arm": "rgb_control",
-  "seed": 42,
-  "status": "interrupted",
-  "reason": "KeyboardInterrupt: "
-}

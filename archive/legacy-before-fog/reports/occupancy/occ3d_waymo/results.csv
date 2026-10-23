@@ -1,4 +1,0 @@
-model,dataset,description,frames,predictions_found,mean_ms,p95_ms,images_per_second,status,reason
-FlashOcc,occ3d_waymo,Efficient camera occupancy model using channel-to-height conversion.,100,0,,,,needs_inference,0/100 predictions. Run the official model and export occupancy arrays; see README.
-OccFormer,occ3d_waymo,Transformer with local and global paths for 3D scene features.,100,0,,,,needs_inference,0/100 predictions. Run the official model and export occupancy arrays; see README.
-GaussianOcc,occ3d_waymo,Gaussian representation with self-supervised geometry learning.,100,0,,,,needs_inference,0/100 predictions. Run the official model and export occupancy arrays; see README.
