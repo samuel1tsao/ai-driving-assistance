@@ -24,28 +24,22 @@ Contributor and agent conventions are in [AGENTS.md](AGENTS.md).
 1. Upload the notebook and select a GPU runtime.
 2. Keep the dataset ZIP in Drive. About 64.25 GiB free is required (49.25 GiB data
    plus 15 GiB working space).
-3. In **Run settings**, choose the profile and set `SETTINGS["data"]["location"]`
-   to the Drive folder containing the ZIP.
+3. In **Run settings**, choose the profile, data directory, output directory,
+   models, and seed. The default data directory is
+   `/content/drive/MyDrive/fog-study`.
 4. Run all. Dependencies and model weights are installed/downloaded as needed.
-
-## Run locally
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-jupyter lab notebooks/fog_density_study.ipynb
-```
-
-Set `RUN_ENVIRONMENT="local"` and point the data and output locations in
-**Run settings** at your data and run root.
 
 ## Using the notebook
 
-In the first section, shared constants and `PROFILE_SETTINGS` define study defaults.
-In code cell 4 (**Run settings**), configure:
-- `RUN_ENVIRONMENT`: `"colab"` or `"local"`
-- `TRAINING_PROFILE`: `PROFILE_SETUP` (`"setup"`), `PROFILE_2K` (`"partial-2k"`), `PROFILE_5K` (`"partial-5k"`), or `PROFILE_FULL` (`"full"`)
-- `SETTINGS["retrain"]`: `False` (default, resumes or reuses saved checkpoints) or `True` (starts a fresh run)
+The first section contains fixed study contracts and profile defaults. In code
+cell 4 (**Run settings**), configure only:
+
+- `RUN_PROFILE`: `PROFILE_SETUP`, `PROFILE_2K`, `PROFILE_5K`, or `PROFILE_FULL`
+- `RUN_STORAGE`: `"drive"` or `"local"`
+- `RUN_DATA_DIRECTORY`: the folder containing the dataset ZIP
+- `RUN_OUTPUT_DIRECTORY`: the folder for resumable run state
+- `RUN_MODELS`: the model names to compare
+- `RUN_SEED`: the random seed
 
 The notebook executes in numbered sections:
 
@@ -72,7 +66,8 @@ completed checkpoint survives a runtime loss.
 
 ## Outputs
 
-Each run folder contains `settings.json`, the input manifest, per-run `last.pt`
-(resumable) and `best.pt`, `trained-model.pt` (inference only), loss histories,
-predictions/timings, `results.csv`, `paired-deltas.csv`, `seed-summary.csv`,
-`density-quality.csv`, `fog-vs-clear.csv` and a `figures/` directory.
+Each run folder contains the resumable training state: `settings.json`, the
+input manifest, per-run `last.pt` and `best.pt`, `trained-model.pt` (inference
+only), loss histories, and prediction/timing intermediates. The review section
+recomputes result, paired, density-quality, and hypothesis tables in memory and
+displays them in the notebook; those findings are not persisted as report CSVs.
