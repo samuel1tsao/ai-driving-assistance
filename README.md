@@ -36,8 +36,7 @@ cell 4 (**Run settings**), configure only:
 
 - `RUN_PROFILE`: `PROFILE_SETUP`, `PROFILE_2K`, `PROFILE_5K`, or `PROFILE_FULL`
 - `RUN_STORAGE`: `"drive"` or `"local"`
-- `RUN_DATA_DIRECTORY`: the folder containing the dataset ZIP
-- `RUN_OUTPUT_DIRECTORY`: the folder for resumable run state
+- `RUN_DIRECTORY`: the single folder containing the dataset, checkpoints, and outputs
 - `RUN_MODELS`: the model names to compare
 - `RUN_SEED`: the random seed
 

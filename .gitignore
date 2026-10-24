@@ -28,5 +28,6 @@ dist/
 **/.venv/
 **/data/
 **/input-manifest.json
+.data-extracted.json
 archive/
 reports/
