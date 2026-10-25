@@ -5,19 +5,60 @@ project fine-tunes **YOLO11n, YOLO11m and DETR** with and without a predicted fo
 density and compares accuracy and latency. See [docs/research.md](docs/research.md)
 for the research question, design and how to interpret results.
 
-Everything lives in one notebook,
-[`notebooks/fog_density_study.ipynb`](notebooks/fog_density_study.ipynb), used both
-locally and in [Google Colab](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC).
+The baseline study lives in [`notebooks/fog_density_study.ipynb`](notebooks/fog_density_study.ipynb).
+[`notebooks/film_experiment.ipynb`](notebooks/film_experiment.ipynb) compares all
+three detectors with and without internal feature FiLM on clear and foggy images.
+It exports overall and per-class AP, FiLM deltas, latency, resource metrics, and
+charts under `models/film/<profile>/`. See [the FiLM experiment](docs/film-experiment.md)
+for its architecture, matched comparisons, analytics, and checkpoint behavior.
+Both notebooks run locally and in
+[Google Colab](https://colab.research.google.com/drive/1kyRGjbEEA6I-9Xja-e4OL3jcYybQlyLC).
 Contributor and agent conventions are in [AGENTS.md](AGENTS.md).
 
 ## Data
 
-- **nuScenes** trainval keyframes (detection boxes).
-- **Foggy Cityscapes** images (beta labels parsed from filenames) for the density
-  model. Included in the dataset ZIP.
-- **Cityscapes `gtFine/` + matched `leftImg8bit/`** for the clear/fog benchmark.
-  Not in the ZIP; place them in the configured `cityscapes-labeled` folder.
-  Missing annotations stop data loading rather than becoming negatives.
+- **nuScenes** camera images and annotations train and evaluate the detectors.
+  The prepared project bundle contains these files and the notebook's manifest.
+- **Foggy Cityscapes** foggy images and beta labels train the frozen fog-density
+  model. The same images are used for detector training with boxes derived from
+  Cityscapes instance masks. The prepared project bundle contains the images and
+  manifest.
+- **Cityscapes** clear images and `gtFine` instance masks support those boxes and
+  the clear/fog evaluation. Download `leftImg8bit_trainvaltest.zip` and
+  `gtFine_trainvaltest.zip` from the [official Cityscapes site](https://www.cityscapes-dataset.com/)
+  after registering and agreeing to its terms.
+
+## Fresh local setup
+
+Set `RUN_STORAGE = "local"` in the notebook. Prepared inputs are shared by all
+profiles under `data/fog-study/`. Checkpoints and reports are kept outside the data
+folder at `models/<profile>/<model>/`; profile names are stable and do not get
+version or timestamp suffixes:
+
+1. `prepare_fog_data()` needs `fog-colab-data.zip`. The notebook currently
+   fetches this prepared bundle from [its Google Drive link](https://drive.google.com/uc?id=14fNOg5ysWcZyll6oW3Nr28ROmFnWSexU).
+   If Drive reports its download quota, save a copy manually as
+   `data/fog-study/fog-colab-data.zip`, then rerun the preparation cell. The
+   notebook extracts it under `data/fog-study/` and checks the required
+   manifests. The bundle includes nuScenes, Foggy Cityscapes, and prepared
+   manifests; it does not include the separate Cityscapes inputs below.
+2. Register at the [Cityscapes site](https://www.cityscapes-dataset.com/),
+   download `leftImg8bit_trainvaltest.zip` and `gtFine_trainvaltest.zip`, and
+   extract both into `data/fog-study/cityscapes-labeled/`. The resulting folders
+   should be `leftImg8bit/` and `gtFine/` directly under `cityscapes-labeled/`.
+3. In the notebook, select `RUN_PROFILE = PROFILE_SETUP` for the first run and
+   run cells in order. `prepare_cityscapes_data()` recognizes the extracted
+   layout; then the notebook loads both datasets, fits or restores the
+   fog-density model, and trains or resumes the detectors. Select a larger
+   profile after setup succeeds.
+
+The archive's Google Drive quota error means the shared bundle is temporarily
+unavailable from that link. It is not a model-training error. The [official
+nuScenes download page](https://www.nuscenes.org/nuscenes) requires an account
+and acceptance of its terms; Foggy Cityscapes is distributed through
+[Cityscapes](https://people.ee.ethz.ch/~csakarid/SFSU_synthetic/) because of its
+source-data licensing. Replacing the prepared bundle with direct source
+downloads requires preparing the notebook's manifests as well.
 
 ## Run on Google Colab
 
@@ -27,6 +68,9 @@ Contributor and agent conventions are in [AGENTS.md](AGENTS.md).
 3. In **Run settings**, choose the profile, data directory, output directory,
    models, and seed. The default data directory is
    `/content/drive/MyDrive/fog-study`.
+   For local runs, the notebook stores shared prepared data in `data/fog-study`
+   and model artifacts in `models/<profile>/<model>/`. Kaggle caches use
+   `data/datasets`.
 4. Run all. Dependencies and model weights are installed/downloaded as needed.
 
 ## Using the notebook
@@ -36,7 +80,7 @@ cell 4 (**Run settings**), configure only:
 
 - `RUN_PROFILE`: `PROFILE_SETUP`, `PROFILE_2K`, `PROFILE_5K`, or `PROFILE_FULL`
 - `RUN_STORAGE`: `"drive"` or `"local"`
-- `RUN_DIRECTORY`: the single folder containing the dataset, checkpoints, and outputs
+- `RUN_DIRECTORY`: the shared prepared-data root; checkpoints and reports are stored under `models/<profile>/<model>/`
 - `RUN_MODELS`: the model names to compare
 - `RUN_SEED`: the random seed
 
@@ -56,17 +100,18 @@ The notebook executes in numbered sections:
 
 ## Checkpoints and resume
 
-Rerun with the same settings and output folder to resume; completed runs are
-reused. Resume restores detector/adapter weights, optimizer, AMP scaler, RNG state
-and loss history. Checkpoints save atomically, one writer per run is enforced, and
-changed inputs/settings/package versions are rejected. `retrain=True` starts fresh
-in a new folder; `setup` overwrites its disposable folder. Only work in a
-completed checkpoint survives a runtime loss.
+Rerun with the same profile to resume; completed model checkpoints are reused.
+Resume restores detector/adapter weights, optimizer, AMP scaler, RNG state and loss
+history. Checkpoints save atomically, one writer per model comparison is enforced,
+and changed inputs/settings/package versions are rejected. Each profile uses a
+stable directory; remove that profile's model directory only when intentionally
+starting its training from scratch. Only work in a completed checkpoint survives a
+runtime loss.
 
 ## Outputs
 
-Each run folder contains the resumable training state: `settings.json`, the
-input manifest, per-run `last.pt` and `best.pt`, `trained-model.pt` (inference
-only), loss histories, and prediction/timing intermediates. The review section
-recomputes result, paired, density-quality, and hypothesis tables in memory and
-displays them in the notebook; those findings are not persisted as report CSVs.
+Each stable profile folder contains `settings.json` and the input manifest. Its
+`<model>/<comparison-arm>/seed-<seed>/` folders contain resumable checkpoints,
+model metrics, predictions, timings, and loss histories. The fog-density model is
+stored under `fog-density/seed-<seed>/`. Matched evaluation uses the profile's
+`matched-evaluation/` folder. The notebook recomputes study tables in memory.

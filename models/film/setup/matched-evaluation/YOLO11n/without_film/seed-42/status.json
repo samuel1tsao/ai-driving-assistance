@@ -1,0 +1,17 @@
+{
+  "model": "YOLO11n",
+  "arm": "without_film",
+  "seed": 42,
+  "profile": "setup",
+  "evaluation_split": "val",
+  "source_checkpoint": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\models\\film\\setup\\YOLO11n\\without_film\\seed-42\\best.pt",
+  "evaluation_scope": "matched_cityscapes_domain_shift",
+  "planned_epochs": 1,
+  "best_epoch": 1,
+  "epochs_trained": 1,
+  "stop_reason": "epoch_budget",
+  "film_site": "none",
+  "film_parameters": 0,
+  "total_trainable_parameters": 2624064,
+  "status": "complete"
+}

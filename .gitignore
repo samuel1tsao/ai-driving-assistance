@@ -31,3 +31,7 @@ dist/
 .data-extracted.json
 archive/
 reports/
+
+# Large local nuScenes evaluation outputs
+/models/film/partial-5k/YOLO11n/with_film/seed-42/nuscenes-predictions.jsonl
+/models/film/partial-5k/YOLO11n/without_film/seed-42/nuscenes-predictions.jsonl

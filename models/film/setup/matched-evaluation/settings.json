@@ -1,0 +1,89 @@
+{
+  "config": {
+    "density_epochs": 1,
+    "density_checkpoint": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\models\\film\\setup\\fog-density\\seed-42\\best.pt",
+    "density_sampling": "natural",
+    "batch_size": 1,
+    "effective_batch_size": 4,
+    "accumulate": 4,
+    "amp_initial_scale": 1024.0,
+    "amp_max_retries": 8,
+    "loader": {
+      "num_workers": 0,
+      "prefetch_factor": null,
+      "pin_memory": false
+    },
+    "repeats": 1,
+    "learning_rates": {
+      "YOLO11n": 0.0001,
+      "YOLO11m": 0.0001,
+      "DETR": 1e-05
+    },
+    "adapter_lr": 0.001,
+    "conditioning": {
+      "version": 1,
+      "kind": "detector_feature_affine",
+      "density_source": "frozen_predicted_beta",
+      "beta_scale": 0.02,
+      "hidden_features": 32,
+      "identity_initialization": true,
+      "sites": {
+        "YOLO11n": "model.10",
+        "YOLO11m": "model.10",
+        "DETR": "model.input_projection"
+      }
+    },
+    "epochs": 1,
+    "seeds": [
+      42
+    ],
+    "conditions": [
+      "without_film",
+      "with_film"
+    ],
+    "size": 320,
+    "save_every": 2,
+    "amp": true,
+    "device": "cuda:0",
+    "early_stopping_patience": 0,
+    "profile_name": "setup",
+    "initialization": "pretrained",
+    "evaluation_split": "val",
+    "overwrite_existing": false,
+    "profile_scope": {
+      "seed": 42,
+      "models": [
+        "YOLO11n",
+        "YOLO11m",
+        "DETR"
+      ],
+      "epochs": 1,
+      "training_image_cap": 48,
+      "validation_image_cap": 24,
+      "size": 320,
+      "save_every": 2,
+      "evaluation_split": "val",
+      "early_stopping_patience": 0,
+      "density_epochs": 1,
+      "name": "setup",
+      "initialization": "pretrained"
+    },
+    "test_scope": {
+      "enabled": true,
+      "profile": "setup",
+      "scientific_results": false
+    },
+    "manifest": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\data\\fog-study\\data\\fog\\nuscenes_all.json",
+    "city_manifest": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\data\\fog-study\\data\\fog\\cityscapes.json",
+    "output": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\models\\film\\setup\\matched-evaluation",
+    "checkpoints": {
+      "YOLO11n": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\data\\fog-study\\yolo11n.pt",
+      "YOLO11m": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\data\\fog-study\\yolo11m.pt",
+      "DETR": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\data\\fog-study\\.cache\\huggingface\\hub\\models--facebook--detr-resnet-50\\snapshots\\70120ba84d68ca1211e007c4fb61d0cd5424be54"
+    },
+    "run_identity": "2b5b609acb643cd27c7e146504d38343b47b940d8e7f08438ec9810b49202703",
+    "evaluation_source": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\models\\film\\setup",
+    "evaluation_max_pairs": 100
+  },
+  "evaluation_identity": "4be0f0463754fc7ea3daef4644048228a810c36f044522c05b4b83e9490a8d99"
+}

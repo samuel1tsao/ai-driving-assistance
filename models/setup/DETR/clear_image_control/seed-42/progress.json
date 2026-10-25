@@ -1,0 +1,17 @@
+{
+  "model": "DETR",
+  "arm": "clear_image_control",
+  "seed": 42,
+  "epoch": 1,
+  "step": 0,
+  "best_loss": 2.904486507177353,
+  "best_epoch": 1,
+  "reason": "epoch",
+  "completed_epochs": 1,
+  "planned_epochs": 1,
+  "saved_image_step_in_epoch": 0,
+  "images_per_epoch": 256,
+  "completed_image_steps": 256,
+  "planned_image_steps": 256,
+  "overall_training_percent": 100.0
+}

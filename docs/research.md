@@ -85,3 +85,10 @@ profiles as independent.
 [Foggy Cityscapes](https://people.ee.ethz.ch/~csakarid/SFSU_synthetic/),
 [YOLO11](https://docs.ultralytics.com/models/yolo11/),
 [DETR model card](https://huggingface.co/facebook/detr-resnet-50).
+
+## FiLM extension
+
+The separate [FiLM experiment](film-experiment.md) compares YOLO11n, YOLO11m,
+and DETR with and without density-conditioned feature modulation on the same
+training images and matched clear/fog evaluation scenes. It records per-class AP
+and weather-specific effects as well as overall accuracy and inference cost.

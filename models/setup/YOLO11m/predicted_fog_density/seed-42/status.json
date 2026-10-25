@@ -1,0 +1,9 @@
+{
+  "model": "YOLO11m",
+  "arm": "predicted_fog_density",
+  "seed": 42,
+  "profile": "setup",
+  "evaluation_split": "val",
+  "planned_epochs": 1,
+  "status": "complete"
+}

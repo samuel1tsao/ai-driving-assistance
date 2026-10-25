@@ -1,0 +1,14 @@
+{
+  "model": "DETR",
+  "arm": "clear_image_control",
+  "seed": 42,
+  "profile": "setup",
+  "evaluation_split": "test",
+  "source_checkpoint": "C:\\Users\\tsao1\\OneDrive\\Documents\\workspace\\Ai Driving Assistance app\\models\\setup\\DETR\\clear_image_control\\seed-42\\best.pt",
+  "evaluation_scope": "matched_cityscapes_domain_shift",
+  "planned_epochs": 1,
+  "best_epoch": 0,
+  "epochs_trained": 1,
+  "stop_reason": "epoch_budget",
+  "status": "complete"
+}

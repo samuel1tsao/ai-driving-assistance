@@ -1,0 +1,17 @@
+{
+  "model": "YOLO11m",
+  "arm": "without_film",
+  "seed": 42,
+  "epoch": 4,
+  "step": 0,
+  "best_loss": 5.790051186165823,
+  "best_epoch": 3,
+  "reason": "epoch",
+  "completed_epochs": 4,
+  "planned_epochs": 5,
+  "saved_image_step_in_epoch": 0,
+  "images_per_epoch": 3558,
+  "completed_image_steps": 14232,
+  "planned_image_steps": 17790,
+  "overall_training_percent": 80.0
+}

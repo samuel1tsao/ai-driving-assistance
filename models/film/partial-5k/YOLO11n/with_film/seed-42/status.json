@@ -1,0 +1,29 @@
+{
+  "model": "YOLO11n",
+  "arm": "with_film",
+  "seed": 42,
+  "profile": "partial-5k",
+  "evaluation_split": "val",
+  "planned_epochs": 5,
+  "conditioning": {
+    "version": 1,
+    "kind": "detector_feature_affine",
+    "density_source": "frozen_predicted_beta",
+    "beta_scale": 0.02,
+    "hidden_features": 32,
+    "identity_initialization": true,
+    "sites": {
+      "YOLO11n": "model.10",
+      "YOLO11m": "model.10",
+      "DETR": "model.input_projection"
+    }
+  },
+  "run_identity": "461359f78daa99ca4d45e18a510136bf35e7996a39fb61cd40f962d08bcd52ba",
+  "film_site": "model.10",
+  "film_parameters": 16960,
+  "total_trainable_parameters": 2641024,
+  "epochs_trained": 5,
+  "best_epoch": 4,
+  "stop_reason": "epoch_budget",
+  "status": "complete"
+}
