@@ -1,0 +1,7 @@
+{
+  "model": "YOLO11m",
+  "arm": "rgb_control",
+  "seed": 42,
+  "status": "error",
+  "reason": "ValueError: Nonfinite loss for nuscenes/23ad2e01b66b48e6a1cf7db05792fd58; AMP fallback was also nonfinite"
+}
