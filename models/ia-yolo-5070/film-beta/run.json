@@ -1,0 +1,15 @@
+{
+  "mode": "film-beta",
+  "precision": "bfloat16",
+  "gradient_scaler": false,
+  "epochs": 30,
+  "image_size": 640,
+  "batch_size": 32,
+  "seed": 42,
+  "train_images": 6816,
+  "val_images": 2109,
+  "test_images": 1500,
+  "predictor_parameters": 555,
+  "conditioning": "oracle beta",
+  "gpu": "NVIDIA GeForce RTX 5070"
+}

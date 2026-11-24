@@ -1,0 +1,9 @@
+{
+  "model": "YOLO11m",
+  "arm": "rgb_control",
+  "seed": 42,
+  "epoch": 0,
+  "step": 19200,
+  "best_loss": null,
+  "reason": "periodic"
+}
